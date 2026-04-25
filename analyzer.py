@@ -329,6 +329,11 @@ class SyslogUDPHandler(socketserver.BaseRequestHandler):
                 event = metadata.get("event")
                 bytes_t = int(metadata.get("bytes", 0))
 
+                # Use embedded timestamp if present (for simulated/virtual clock),
+                # otherwise fall back to wall-clock time
+                if "timestamp" in metadata and metadata["timestamp"].isdigit():
+                    current_time = float(metadata["timestamp"])
+
                 # Mock duration calculation for DESTROY events
                 duration = 0
                 if event == "DESTROY":

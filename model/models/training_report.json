@@ -1,7 +1,7 @@
 {
-  "best_epoch": 3,
+  "best_epoch": 16,
   "best_val_f1": 1.0,
-  "best_val_loss": 0.0004650165410566842,
+  "best_val_loss": 2.87856920598036e-05,
   "per_class_metrics": {
     "benign": {
       "precision": 1.0,

@@ -1,331 +1,398 @@
 """
-Synthetic Training Data Generator for ZKTCA-Transformer
-========================================================
-Generates labeled sequences of network flow metadata that mimic
-the behavioral signatures described in the spec document.
-
-Each sample is a sequence of 32 flow events (a ~5-minute window)
-encoded as 12-dimensional feature vectors.
-
-Labels (multi-label):
-  0 = benign
-  1 = grooming (app switching)
-  2 = bullying (burst from multiple sources)
-  3 = night_abuse (persistent nocturnal activity)
-  4 = exfiltration (large uploads to cloud)
+ZKTCA Enhanced Training Data Generator (v2)
+============================================
+Generates 50K+ labeled sequences with:
+- More samples per class (8K base + 2K variants)
+- Multi-label combinations (grooming+night, bullying+exfiltration)
+- Hard negatives (benign gaming, benign nocturnal)
+- Gaussian noise augmentation
+- Variable sequence lengths (padded to 32)
 """
 
 import numpy as np
-import os
-import json
+import json, argparse
 from pathlib import Path
 
-SEQUENCE_LENGTH = 32
-FEATURE_DIM = 12
+SEQ_LEN = 32
+FEAT_DIM = 12
 OUTPUT_DIR = Path(__file__).parent / "data"
 
-# Port category mapping (same as analyzer.py)
-PORT_GAMING = [19132, 27015, 25565, 30000]   # Minecraft, Steam, MC Java, generic game
-PORT_CHAT = [443, 5222, 5223, 8443]           # TLS (Discord/Telegram/WhatsApp), XMPP
-PORT_CLOUD = [443, 8080, 9000]                # Cloud storage endpoints
-PORT_NORMAL = [80, 443, 8080, 53]             # Normal browsing
-
 # Feature indices
-F_DST_PORT_CAT = 0    # 0=other, 1=gaming, 2=chat, 3=cloud
-F_PROTOCOL = 1        # 0=TCP(6), 1=UDP(17)
-F_PACKETS = 2         # log-scaled
-F_BYTES = 3           # log-scaled
-F_DURATION = 4        # seconds
-F_BYTES_RATIO = 5     # upload/download
-F_IAT = 6             # inter-arrival time
-F_HOUR_SIN = 7        # cyclic hour encoding
-F_HOUR_COS = 8
-F_UNIQUE_DST_5M = 9   # unique dest IPs in window
-F_DST_ENTROPY = 10    # Shannon entropy
-F_IS_NEW_DST = 11     # binary: new destination
+F_PORT_CAT, F_PROTO, F_PKT, F_BYTES, F_DUR, F_RATIO = 0, 1, 2, 3, 4, 5
+F_IAT, F_HSIN, F_HCOS, F_UDST, F_ENTR, F_NEWDST = 6, 7, 8, 9, 10, 11
 
+def cyclic_hour(h):
+    return np.sin(2*np.pi*h/24), np.cos(2*np.pi*h/24)
 
-def port_to_category(port):
-    if port in PORT_GAMING:
-        return 1.0
-    elif port in PORT_CHAT:
-        return 2.0
-    elif port in PORT_CLOUD:
-        return 3.0
-    return 0.0
+def fill_baseline(seq, i, hour_sin, hour_cos, port_cat=0.0):
+    seq[i, F_PORT_CAT] = port_cat
+    seq[i, F_PROTO] = 0.0 if np.random.rand() > 0.3 else 1.0
+    seq[i, F_PKT] = np.log1p(np.random.randint(5, 200))
+    seq[i, F_BYTES] = np.log1p(np.random.randint(500, 50000))
+    seq[i, F_DUR] = np.random.uniform(0.5, 120)
+    seq[i, F_RATIO] = np.random.uniform(0.3, 0.7)
+    seq[i, F_IAT] = np.random.uniform(0.1, 10.0)
+    seq[i, F_HSIN] = hour_sin + np.random.normal(0, 0.05)
+    seq[i, F_HCOS] = hour_cos + np.random.normal(0, 0.05)
+    seq[i, F_UDST] = np.random.randint(2, 6) / 20.0
+    seq[i, F_ENTR] = np.random.uniform(0.3, 0.7)
+    seq[i, F_NEWDST] = float(np.random.rand() < 0.1)
 
+def augment(seq, noise=0.03):
+    """Add Gaussian noise for data augmentation."""
+    return seq + np.random.normal(0, noise, seq.shape).astype(np.float32)
 
-def cyclic_hour(hour):
-    """Encode hour as sin/cos for cyclic continuity."""
-    sin_h = np.sin(2 * np.pi * hour / 24.0)
-    cos_h = np.cos(2 * np.pi * hour / 24.0)
-    return sin_h, cos_h
+# ── Generators ──────────────────────────────────────────
 
+def gen_benign(n):
+    seqs, labs = [], []
+    for _ in range(n):
+        seq = np.zeros((SEQ_LEN, FEAT_DIM))
+        h = np.random.choice([8,9,10,11,14,15,16,17,18,19,20])
+        hs, hc = cyclic_hour(h)
+        for i in range(SEQ_LEN):
+            fill_baseline(seq, i, hs, hc)
+        seqs.append(seq); labs.append([1,0,0,0,0])
+    return seqs, labs
 
-def generate_benign(n_samples=2000):
-    """Normal browsing: stable destinations, regular hours, balanced traffic."""
-    sequences = []
-    labels = []
-    for _ in range(n_samples):
-        seq = np.zeros((SEQUENCE_LENGTH, FEATURE_DIM))
-        hour = np.random.choice([8, 9, 10, 11, 14, 15, 16, 17, 18, 19, 20])  # daytime
-        hour_sin, hour_cos = cyclic_hour(hour)
+def gen_benign_gaming(n):
+    """Hard negative: gaming all session, NO switch to chat."""
+    seqs, labs = [], []
+    for _ in range(n):
+        seq = np.zeros((SEQ_LEN, FEAT_DIM))
+        h = np.random.choice([14,15,16,17,18,19,20])
+        hs, hc = cyclic_hour(h)
+        for i in range(SEQ_LEN):
+            seq[i, F_PORT_CAT] = 1.0
+            seq[i, F_PROTO] = 1.0
+            seq[i, F_PKT] = np.log1p(np.random.randint(50, 500))
+            seq[i, F_BYTES] = np.log1p(np.random.randint(1000, 20000))
+            seq[i, F_DUR] = np.random.uniform(10, 300)
+            seq[i, F_RATIO] = np.random.uniform(0.4, 0.6)
+            seq[i, F_IAT] = np.random.uniform(0.05, 2.0)
+            seq[i, F_HSIN] = hs + np.random.normal(0, 0.05)
+            seq[i, F_HCOS] = hc + np.random.normal(0, 0.05)
+            seq[i, F_UDST] = np.random.randint(1, 4) / 20.0
+            seq[i, F_ENTR] = np.random.uniform(0.2, 0.5)
+            seq[i, F_NEWDST] = float(np.random.rand() < 0.05)
+        seqs.append(seq); labs.append([1,0,0,0,0])
+    return seqs, labs
 
-        n_unique_dst = np.random.randint(2, 6)
-        for i in range(SEQUENCE_LENGTH):
-            port = np.random.choice(PORT_NORMAL)
-            seq[i, F_DST_PORT_CAT] = port_to_category(port)
-            seq[i, F_PROTOCOL] = 0.0 if np.random.rand() > 0.3 else 1.0  # mostly TCP
-            seq[i, F_PACKETS] = np.log1p(np.random.randint(5, 200))
-            seq[i, F_BYTES] = np.log1p(np.random.randint(500, 50000))
-            seq[i, F_DURATION] = np.random.uniform(0.5, 120)
-            seq[i, F_BYTES_RATIO] = np.random.uniform(0.3, 0.7)  # balanced
-            seq[i, F_IAT] = np.random.uniform(0.1, 10.0)  # regular pacing
-            seq[i, F_HOUR_SIN] = hour_sin + np.random.normal(0, 0.05)
-            seq[i, F_HOUR_COS] = hour_cos + np.random.normal(0, 0.05)
-            seq[i, F_UNIQUE_DST_5M] = n_unique_dst / 20.0  # normalized
-            seq[i, F_DST_ENTROPY] = np.random.uniform(0.3, 0.7)
-            seq[i, F_IS_NEW_DST] = 0.0 if np.random.rand() > 0.1 else 1.0
+def gen_benign_night(n):
+    """Hard negative: brief late-night activity (e.g., quick check), NOT abuse."""
+    seqs, labs = [], []
+    for _ in range(n):
+        seq = np.zeros((SEQ_LEN, FEAT_DIM))
+        h = np.random.choice([23, 0, 1])
+        hs, hc = cyclic_hour(h)
+        active = np.random.randint(3, 8)  # only a few events active
+        for i in range(SEQ_LEN):
+            if i < active:
+                fill_baseline(seq, i, hs, hc)
+                seq[i, F_DUR] = np.random.uniform(1, 30)  # short
+                seq[i, F_IAT] = np.random.uniform(0.1, 3.0)  # fast, automated
+            else:
+                fill_baseline(seq, i, hs, hc)
+                seq[i, F_PKT] = np.log1p(np.random.randint(1, 10))
+                seq[i, F_BYTES] = np.log1p(np.random.randint(100, 1000))
+                seq[i, F_DUR] = 0.0
+        seqs.append(seq); labs.append([1,0,0,0,0])
+    return seqs, labs
 
-        sequences.append(seq)
-        labels.append([1, 0, 0, 0, 0])  # benign only
-    return sequences, labels
-
-
-def generate_grooming(n_samples=2000):
-    """
-    Grooming pattern: starts with gaming traffic, then abruptly switches
-    to encrypted chat within the same window (< 5 minutes).
-    """
-    sequences = []
-    labels = []
-    for _ in range(n_samples):
-        seq = np.zeros((SEQUENCE_LENGTH, FEATURE_DIM))
-        hour = np.random.choice([14, 15, 16, 17, 18, 19, 20, 21])
-        hour_sin, hour_cos = cyclic_hour(hour)
-
-        # Switch point: somewhere in the middle of the sequence
-        switch_point = np.random.randint(8, 24)
-
-        for i in range(SEQUENCE_LENGTH):
-            if i < switch_point:
-                # Gaming phase
-                port = np.random.choice(PORT_GAMING)
-                seq[i, F_DST_PORT_CAT] = 1.0  # gaming
-                seq[i, F_PROTOCOL] = 1.0  # UDP typical for games
-                seq[i, F_PACKETS] = np.log1p(np.random.randint(50, 500))
+def gen_grooming(n):
+    seqs, labs = [], []
+    for _ in range(n):
+        seq = np.zeros((SEQ_LEN, FEAT_DIM))
+        h = np.random.choice([14,15,16,17,18,19,20,21])
+        hs, hc = cyclic_hour(h)
+        sw = np.random.randint(6, 26)
+        for i in range(SEQ_LEN):
+            if i < sw:
+                seq[i, F_PORT_CAT] = 1.0; seq[i, F_PROTO] = 1.0
+                seq[i, F_PKT] = np.log1p(np.random.randint(50, 500))
                 seq[i, F_BYTES] = np.log1p(np.random.randint(1000, 20000))
-                seq[i, F_DURATION] = np.random.uniform(10, 300)
-                seq[i, F_BYTES_RATIO] = np.random.uniform(0.4, 0.6)
+                seq[i, F_DUR] = np.random.uniform(10, 300)
+                seq[i, F_RATIO] = np.random.uniform(0.4, 0.6)
                 seq[i, F_IAT] = np.random.uniform(0.05, 2.0)
             else:
-                # Chat phase (abrupt switch)
-                seq[i, F_DST_PORT_CAT] = 2.0  # chat/encrypted
-                seq[i, F_PROTOCOL] = 0.0  # TCP for chat
-                seq[i, F_PACKETS] = np.log1p(np.random.randint(10, 100))
+                seq[i, F_PORT_CAT] = 2.0; seq[i, F_PROTO] = 0.0
+                seq[i, F_PKT] = np.log1p(np.random.randint(10, 100))
                 seq[i, F_BYTES] = np.log1p(np.random.randint(200, 5000))
-                seq[i, F_DURATION] = np.random.uniform(30, 600)
-                seq[i, F_BYTES_RATIO] = np.random.uniform(0.3, 0.5)
-                seq[i, F_IAT] = np.random.uniform(1.0, 30.0)  # human typing rhythm
+                seq[i, F_DUR] = np.random.uniform(30, 600)
+                seq[i, F_RATIO] = np.random.uniform(0.3, 0.5)
+                seq[i, F_IAT] = np.random.uniform(1.0, 30.0)
+            seq[i, F_HSIN] = hs + np.random.normal(0, 0.05)
+            seq[i, F_HCOS] = hc + np.random.normal(0, 0.05)
+            seq[i, F_UDST] = np.random.randint(2, 8) / 20.0
+            seq[i, F_ENTR] = np.random.uniform(0.4, 0.8)
+            seq[i, F_NEWDST] = 1.0 if i == sw else float(np.random.rand() < 0.15)
+        seqs.append(seq); labs.append([0,1,0,0,0])
+    return seqs, labs
 
-            seq[i, F_HOUR_SIN] = hour_sin + np.random.normal(0, 0.05)
-            seq[i, F_HOUR_COS] = hour_cos + np.random.normal(0, 0.05)
-            seq[i, F_UNIQUE_DST_5M] = np.random.randint(2, 8) / 20.0
-            seq[i, F_DST_ENTROPY] = np.random.uniform(0.4, 0.8)
-            seq[i, F_IS_NEW_DST] = 1.0 if i == switch_point else (0.0 if np.random.rand() > 0.15 else 1.0)
+def gen_grooming_gradual(n):
+    """Variant: gradual transition (interleaved gaming+chat) instead of abrupt."""
+    seqs, labs = [], []
+    for _ in range(n):
+        seq = np.zeros((SEQ_LEN, FEAT_DIM))
+        h = np.random.choice([15,16,17,18,19,20])
+        hs, hc = cyclic_hour(h)
+        transition_start = np.random.randint(8, 16)
+        for i in range(SEQ_LEN):
+            if i < transition_start:
+                seq[i, F_PORT_CAT] = 1.0; seq[i, F_PROTO] = 1.0
+            elif i < transition_start + 8:
+                seq[i, F_PORT_CAT] = np.random.choice([1.0, 2.0])
+                seq[i, F_PROTO] = 0.0 if seq[i, F_PORT_CAT] == 2.0 else 1.0
+            else:
+                seq[i, F_PORT_CAT] = 2.0; seq[i, F_PROTO] = 0.0
+            seq[i, F_PKT] = np.log1p(np.random.randint(10, 400))
+            seq[i, F_BYTES] = np.log1p(np.random.randint(500, 15000))
+            seq[i, F_DUR] = np.random.uniform(10, 400)
+            seq[i, F_RATIO] = np.random.uniform(0.3, 0.6)
+            seq[i, F_IAT] = np.random.uniform(0.5, 15.0)
+            seq[i, F_HSIN] = hs + np.random.normal(0, 0.05)
+            seq[i, F_HCOS] = hc + np.random.normal(0, 0.05)
+            seq[i, F_UDST] = np.random.randint(2, 8) / 20.0
+            seq[i, F_ENTR] = np.random.uniform(0.4, 0.8)
+            seq[i, F_NEWDST] = float(np.random.rand() < 0.2)
+        seqs.append(seq); labs.append([0,1,0,0,0])
+    return seqs, labs
 
-        sequences.append(seq)
-        labels.append([0, 1, 0, 0, 0])  # grooming
-    return sequences, labels
-
-
-def generate_bullying(n_samples=2000):
-    """
-    Bullying pattern: sudden burst of inbound traffic from many unique
-    source IPs, asymmetric (more download than upload).
-    """
-    sequences = []
-    labels = []
-    for _ in range(n_samples):
-        seq = np.zeros((SEQUENCE_LENGTH, FEATURE_DIM))
-        hour = np.random.choice(range(8, 22))
-        hour_sin, hour_cos = cyclic_hour(hour)
-
-        # Burst starts at some point
-        burst_start = np.random.randint(4, 16)
-        burst_end = min(burst_start + np.random.randint(8, 16), SEQUENCE_LENGTH)
-
-        for i in range(SEQUENCE_LENGTH):
-            if burst_start <= i < burst_end:
-                # Burst phase: many sources, high volume, asymmetric
-                seq[i, F_DST_PORT_CAT] = 2.0  # chat/encrypted
-                seq[i, F_PROTOCOL] = 0.0
-                seq[i, F_PACKETS] = np.log1p(np.random.randint(100, 1000))
+def gen_bullying(n):
+    seqs, labs = [], []
+    for _ in range(n):
+        seq = np.zeros((SEQ_LEN, FEAT_DIM))
+        h = np.random.choice(range(8, 22))
+        hs, hc = cyclic_hour(h)
+        bs = np.random.randint(4, 16)
+        be = min(bs + np.random.randint(6, 18), SEQ_LEN)
+        for i in range(SEQ_LEN):
+            if bs <= i < be:
+                seq[i, F_PORT_CAT] = 2.0; seq[i, F_PROTO] = 0.0
+                seq[i, F_PKT] = np.log1p(np.random.randint(100, 1000))
                 seq[i, F_BYTES] = np.log1p(np.random.randint(10000, 500000))
-                seq[i, F_DURATION] = np.random.uniform(1, 30)
-                seq[i, F_BYTES_RATIO] = np.random.uniform(0.05, 0.2)  # very asymmetric
-                seq[i, F_IAT] = np.random.uniform(0.01, 0.5)  # very fast bursts
-                seq[i, F_UNIQUE_DST_5M] = np.random.randint(10, 30) / 20.0  # many sources
-                seq[i, F_DST_ENTROPY] = np.random.uniform(0.8, 1.0)  # high entropy
-                seq[i, F_IS_NEW_DST] = 1.0 if np.random.rand() > 0.3 else 0.0
+                seq[i, F_DUR] = np.random.uniform(1, 30)
+                seq[i, F_RATIO] = np.random.uniform(0.05, 0.2)
+                seq[i, F_IAT] = np.random.uniform(0.01, 0.5)
+                seq[i, F_UDST] = np.random.randint(10, 30) / 20.0
+                seq[i, F_ENTR] = np.random.uniform(0.8, 1.0)
+                seq[i, F_NEWDST] = float(np.random.rand() > 0.3)
             else:
-                # Normal baseline
-                seq[i, F_DST_PORT_CAT] = 0.0
-                seq[i, F_PROTOCOL] = 0.0
-                seq[i, F_PACKETS] = np.log1p(np.random.randint(5, 50))
-                seq[i, F_BYTES] = np.log1p(np.random.randint(500, 5000))
-                seq[i, F_DURATION] = np.random.uniform(1, 60)
-                seq[i, F_BYTES_RATIO] = np.random.uniform(0.3, 0.7)
-                seq[i, F_IAT] = np.random.uniform(0.5, 5.0)
-                seq[i, F_UNIQUE_DST_5M] = np.random.randint(2, 5) / 20.0
-                seq[i, F_DST_ENTROPY] = np.random.uniform(0.3, 0.6)
-                seq[i, F_IS_NEW_DST] = 0.0
+                fill_baseline(seq, i, hs, hc)
+            seq[i, F_HSIN] = hs + np.random.normal(0, 0.05)
+            seq[i, F_HCOS] = hc + np.random.normal(0, 0.05)
+        seqs.append(seq); labs.append([0,0,1,0,0])
+    return seqs, labs
 
-            seq[i, F_HOUR_SIN] = hour_sin + np.random.normal(0, 0.05)
-            seq[i, F_HOUR_COS] = hour_cos + np.random.normal(0, 0.05)
+def gen_bullying_mild(n):
+    """Variant: fewer sources (5-10), lower volume — subtler bullying."""
+    seqs, labs = [], []
+    for _ in range(n):
+        seq = np.zeros((SEQ_LEN, FEAT_DIM))
+        h = np.random.choice(range(8, 22))
+        hs, hc = cyclic_hour(h)
+        bs = np.random.randint(8, 20)
+        be = min(bs + np.random.randint(4, 10), SEQ_LEN)
+        for i in range(SEQ_LEN):
+            if bs <= i < be:
+                seq[i, F_PORT_CAT] = 2.0; seq[i, F_PROTO] = 0.0
+                seq[i, F_PKT] = np.log1p(np.random.randint(30, 300))
+                seq[i, F_BYTES] = np.log1p(np.random.randint(5000, 100000))
+                seq[i, F_DUR] = np.random.uniform(5, 60)
+                seq[i, F_RATIO] = np.random.uniform(0.1, 0.3)
+                seq[i, F_IAT] = np.random.uniform(0.1, 2.0)
+                seq[i, F_UDST] = np.random.randint(5, 12) / 20.0
+                seq[i, F_ENTR] = np.random.uniform(0.6, 0.9)
+                seq[i, F_NEWDST] = float(np.random.rand() > 0.4)
+            else:
+                fill_baseline(seq, i, hs, hc)
+            seq[i, F_HSIN] = hs + np.random.normal(0, 0.05)
+            seq[i, F_HCOS] = hc + np.random.normal(0, 0.05)
+        seqs.append(seq); labs.append([0,0,1,0,0])
+    return seqs, labs
 
-        sequences.append(seq)
-        labels.append([0, 0, 1, 0, 0])  # bullying
-    return sequences, labels
-
-
-def generate_night_abuse(n_samples=2000):
-    """
-    Night abuse: persistent connections with human-like IAT patterns
-    between 23:00 and 04:00.
-    """
-    sequences = []
-    labels = []
-    for _ in range(n_samples):
-        seq = np.zeros((SEQUENCE_LENGTH, FEATURE_DIM))
-        hour = np.random.choice([23, 0, 1, 2, 3])
-        hour_sin, hour_cos = cyclic_hour(hour)
-
-        for i in range(SEQUENCE_LENGTH):
-            seq[i, F_DST_PORT_CAT] = np.random.choice([0.0, 2.0])
-            seq[i, F_PROTOCOL] = 0.0
-            seq[i, F_PACKETS] = np.log1p(np.random.randint(20, 300))
+def gen_night(n):
+    seqs, labs = [], []
+    for _ in range(n):
+        seq = np.zeros((SEQ_LEN, FEAT_DIM))
+        h = np.random.choice([23, 0, 1, 2, 3])
+        hs, hc = cyclic_hour(h)
+        for i in range(SEQ_LEN):
+            seq[i, F_PORT_CAT] = np.random.choice([0.0, 2.0])
+            seq[i, F_PROTO] = 0.0
+            seq[i, F_PKT] = np.log1p(np.random.randint(20, 300))
             seq[i, F_BYTES] = np.log1p(np.random.randint(2000, 100000))
-            seq[i, F_DURATION] = np.random.uniform(60, 1800)  # long sessions
-            seq[i, F_BYTES_RATIO] = np.random.uniform(0.3, 0.6)
-            seq[i, F_IAT] = np.random.uniform(1.0, 30.0)  # human-like, irregular
-            seq[i, F_HOUR_SIN] = hour_sin + np.random.normal(0, 0.1)
-            seq[i, F_HOUR_COS] = hour_cos + np.random.normal(0, 0.1)
-            seq[i, F_UNIQUE_DST_5M] = np.random.randint(1, 4) / 20.0
-            seq[i, F_DST_ENTROPY] = np.random.uniform(0.2, 0.5)
-            seq[i, F_IS_NEW_DST] = 0.0 if np.random.rand() > 0.05 else 1.0
+            seq[i, F_DUR] = np.random.uniform(60, 1800)
+            seq[i, F_RATIO] = np.random.uniform(0.3, 0.6)
+            seq[i, F_IAT] = np.random.uniform(1.0, 30.0)
+            seq[i, F_HSIN] = hs + np.random.normal(0, 0.1)
+            seq[i, F_HCOS] = hc + np.random.normal(0, 0.1)
+            seq[i, F_UDST] = np.random.randint(1, 4) / 20.0
+            seq[i, F_ENTR] = np.random.uniform(0.2, 0.5)
+            seq[i, F_NEWDST] = float(np.random.rand() < 0.05)
+        seqs.append(seq); labs.append([0,0,0,1,0])
+    return seqs, labs
 
-        sequences.append(seq)
-        labels.append([0, 0, 0, 1, 0])  # night_abuse
-    return sequences, labels
-
-
-def generate_exfiltration(n_samples=2000):
-    """
-    Media exfiltration: large upload spikes to cloud storage,
-    very high bytes_ratio (more upload than download).
-    """
-    sequences = []
-    labels = []
-    for _ in range(n_samples):
-        seq = np.zeros((SEQUENCE_LENGTH, FEATURE_DIM))
-        hour = np.random.choice(range(8, 23))
-        hour_sin, hour_cos = cyclic_hour(hour)
-
-        exfil_start = np.random.randint(4, 20)
-        exfil_end = min(exfil_start + np.random.randint(4, 10), SEQUENCE_LENGTH)
-
-        for i in range(SEQUENCE_LENGTH):
-            if exfil_start <= i < exfil_end:
-                # Exfiltration phase: massive uploads
-                seq[i, F_DST_PORT_CAT] = 3.0  # cloud
-                seq[i, F_PROTOCOL] = 0.0
-                seq[i, F_PACKETS] = np.log1p(np.random.randint(500, 5000))
-                seq[i, F_BYTES] = np.log1p(np.random.randint(1000000, 50000000))  # >1MB
-                seq[i, F_DURATION] = np.random.uniform(10, 120)
-                seq[i, F_BYTES_RATIO] = np.random.uniform(0.7, 0.95)  # upload-heavy
+def gen_exfil(n):
+    seqs, labs = [], []
+    for _ in range(n):
+        seq = np.zeros((SEQ_LEN, FEAT_DIM))
+        h = np.random.choice(range(8, 23))
+        hs, hc = cyclic_hour(h)
+        es = np.random.randint(4, 20)
+        ee = min(es + np.random.randint(3, 12), SEQ_LEN)
+        for i in range(SEQ_LEN):
+            if es <= i < ee:
+                seq[i, F_PORT_CAT] = 3.0; seq[i, F_PROTO] = 0.0
+                seq[i, F_PKT] = np.log1p(np.random.randint(500, 5000))
+                seq[i, F_BYTES] = np.log1p(np.random.randint(1000000, 50000000))
+                seq[i, F_DUR] = np.random.uniform(10, 120)
+                seq[i, F_RATIO] = np.random.uniform(0.7, 0.95)
                 seq[i, F_IAT] = np.random.uniform(0.01, 1.0)
-                seq[i, F_UNIQUE_DST_5M] = np.random.randint(1, 3) / 20.0
-                seq[i, F_DST_ENTROPY] = np.random.uniform(0.1, 0.3)  # few destinations
-                seq[i, F_IS_NEW_DST] = 1.0 if np.random.rand() > 0.5 else 0.0
+                seq[i, F_UDST] = np.random.randint(1, 3) / 20.0
+                seq[i, F_ENTR] = np.random.uniform(0.1, 0.3)
+                seq[i, F_NEWDST] = float(np.random.rand() > 0.5)
             else:
-                # Normal baseline
-                seq[i, F_DST_PORT_CAT] = 0.0
-                seq[i, F_PROTOCOL] = 0.0
-                seq[i, F_PACKETS] = np.log1p(np.random.randint(5, 100))
-                seq[i, F_BYTES] = np.log1p(np.random.randint(500, 10000))
-                seq[i, F_DURATION] = np.random.uniform(1, 60)
-                seq[i, F_BYTES_RATIO] = np.random.uniform(0.3, 0.6)
+                fill_baseline(seq, i, hs, hc)
+            seq[i, F_HSIN] = hs + np.random.normal(0, 0.05)
+            seq[i, F_HCOS] = hc + np.random.normal(0, 0.05)
+        seqs.append(seq); labs.append([0,0,0,0,1])
+    return seqs, labs
+
+# ── Multi-label combinations ───────────────────────────
+
+def gen_grooming_night(n):
+    """Grooming that happens at night (gaming→chat at 1AM)."""
+    seqs, labs = [], []
+    for _ in range(n):
+        seq = np.zeros((SEQ_LEN, FEAT_DIM))
+        h = np.random.choice([23, 0, 1, 2])
+        hs, hc = cyclic_hour(h)
+        sw = np.random.randint(8, 20)
+        for i in range(SEQ_LEN):
+            if i < sw:
+                seq[i, F_PORT_CAT] = 1.0; seq[i, F_PROTO] = 1.0
+                seq[i, F_PKT] = np.log1p(np.random.randint(50, 500))
+                seq[i, F_BYTES] = np.log1p(np.random.randint(1000, 20000))
+                seq[i, F_DUR] = np.random.uniform(30, 600)
+                seq[i, F_RATIO] = np.random.uniform(0.4, 0.6)
+                seq[i, F_IAT] = np.random.uniform(0.1, 3.0)
+            else:
+                seq[i, F_PORT_CAT] = 2.0; seq[i, F_PROTO] = 0.0
+                seq[i, F_PKT] = np.log1p(np.random.randint(10, 100))
+                seq[i, F_BYTES] = np.log1p(np.random.randint(200, 5000))
+                seq[i, F_DUR] = np.random.uniform(60, 1800)
+                seq[i, F_RATIO] = np.random.uniform(0.3, 0.5)
+                seq[i, F_IAT] = np.random.uniform(1.0, 30.0)
+            seq[i, F_HSIN] = hs + np.random.normal(0, 0.1)
+            seq[i, F_HCOS] = hc + np.random.normal(0, 0.1)
+            seq[i, F_UDST] = np.random.randint(2, 6) / 20.0
+            seq[i, F_ENTR] = np.random.uniform(0.3, 0.7)
+            seq[i, F_NEWDST] = float(np.random.rand() < 0.15)
+        seqs.append(seq); labs.append([0,1,0,1,0])  # grooming + night
+    return seqs, labs
+
+def gen_night_exfil(n):
+    """Exfiltration at night (uploading photos at 2AM)."""
+    seqs, labs = [], []
+    for _ in range(n):
+        seq = np.zeros((SEQ_LEN, FEAT_DIM))
+        h = np.random.choice([0, 1, 2, 3])
+        hs, hc = cyclic_hour(h)
+        es = np.random.randint(10, 22)
+        ee = min(es + np.random.randint(4, 10), SEQ_LEN)
+        for i in range(SEQ_LEN):
+            seq[i, F_HSIN] = hs + np.random.normal(0, 0.1)
+            seq[i, F_HCOS] = hc + np.random.normal(0, 0.1)
+            if es <= i < ee:
+                seq[i, F_PORT_CAT] = 3.0; seq[i, F_PROTO] = 0.0
+                seq[i, F_PKT] = np.log1p(np.random.randint(500, 5000))
+                seq[i, F_BYTES] = np.log1p(np.random.randint(1000000, 50000000))
+                seq[i, F_DUR] = np.random.uniform(30, 300)
+                seq[i, F_RATIO] = np.random.uniform(0.7, 0.95)
                 seq[i, F_IAT] = np.random.uniform(0.5, 5.0)
-                seq[i, F_UNIQUE_DST_5M] = np.random.randint(2, 5) / 20.0
-                seq[i, F_DST_ENTROPY] = np.random.uniform(0.3, 0.6)
-                seq[i, F_IS_NEW_DST] = 0.0
+            else:
+                seq[i, F_PORT_CAT] = np.random.choice([0.0, 2.0])
+                seq[i, F_PROTO] = 0.0
+                seq[i, F_PKT] = np.log1p(np.random.randint(20, 200))
+                seq[i, F_BYTES] = np.log1p(np.random.randint(2000, 50000))
+                seq[i, F_DUR] = np.random.uniform(60, 900)
+                seq[i, F_RATIO] = np.random.uniform(0.3, 0.6)
+                seq[i, F_IAT] = np.random.uniform(2.0, 30.0)
+            seq[i, F_UDST] = np.random.randint(1, 4) / 20.0
+            seq[i, F_ENTR] = np.random.uniform(0.2, 0.5)
+            seq[i, F_NEWDST] = float(np.random.rand() < 0.1)
+        seqs.append(seq); labs.append([0,0,0,1,1])  # night + exfil
+    return seqs, labs
 
-            seq[i, F_HOUR_SIN] = hour_sin + np.random.normal(0, 0.05)
-            seq[i, F_HOUR_COS] = hour_cos + np.random.normal(0, 0.05)
-
-        sequences.append(seq)
-        labels.append([0, 0, 0, 0, 1])  # exfiltration
-    return sequences, labels
-
+# ── Main ────────────────────────────────────────────────
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--samples", type=int, default=8000, help="Base samples per class")
+    args = parser.parse_args()
+    n = args.samples
+    n_var = n // 4  # variant count
+
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"Generating enhanced ZKTCA dataset ({n} base + variants per class)...\n")
 
-    print("Generating synthetic ZKTCA training data...")
-    all_sequences = []
-    all_labels = []
-
+    all_seqs, all_labs = [], []
     generators = [
-        ("benign", generate_benign),
-        ("grooming", generate_grooming),
-        ("bullying", generate_bullying),
-        ("night_abuse", generate_night_abuse),
-        ("exfiltration", generate_exfiltration),
+        ("benign (normal)",       gen_benign,          n),
+        ("benign (gaming only)",  gen_benign_gaming,   n_var),
+        ("benign (brief night)",  gen_benign_night,    n_var),
+        ("grooming (abrupt)",     gen_grooming,        n),
+        ("grooming (gradual)",    gen_grooming_gradual,n_var),
+        ("bullying (severe)",     gen_bullying,        n),
+        ("bullying (mild)",       gen_bullying_mild,   n_var),
+        ("night abuse",           gen_night,           n),
+        ("exfiltration",          gen_exfil,           n),
+        ("grooming + night",      gen_grooming_night,  n_var),
+        ("night + exfiltration",  gen_night_exfil,     n_var),
     ]
 
-    for name, gen_fn in generators:
-        seqs, labs = gen_fn(n_samples=2000)
-        all_sequences.extend(seqs)
-        all_labels.extend(labs)
-        print(f"  ✅ {name}: {len(seqs)} sequences")
+    for name, fn, count in generators:
+        s, l = fn(count)
+        all_seqs.extend(s); all_labs.extend(l)
+        print(f"  ✅ {name:25s} {count:5d} samples")
+
+    # Augmented copies (noise)
+    aug_seqs, aug_labs = [], []
+    n_aug = len(all_seqs) // 5
+    for idx in np.random.choice(len(all_seqs), n_aug, replace=False):
+        aug_seqs.append(augment(all_seqs[idx]))
+        aug_labs.append(all_labs[idx])
+    all_seqs.extend(aug_seqs); all_labs.extend(aug_labs)
+    print(f"  🔄 {'augmented (noise)':25s} {n_aug:5d} samples")
 
     # Shuffle
-    indices = np.random.permutation(len(all_sequences))
-    all_sequences = [all_sequences[i] for i in indices]
-    all_labels = [all_labels[i] for i in indices]
+    idx = np.random.permutation(len(all_seqs))
+    X = np.array([all_seqs[i] for i in idx], dtype=np.float32)
+    y = np.array([all_labs[i] for i in idx], dtype=np.float32)
 
-    # Convert to numpy arrays
-    X = np.array(all_sequences, dtype=np.float32)
-    y = np.array(all_labels, dtype=np.float32)
-
-    # Save
     np.save(OUTPUT_DIR / "X_train.npy", X)
     np.save(OUTPUT_DIR / "y_train.npy", y)
 
-    print(f"\n📊 Dataset saved to {OUTPUT_DIR}")
-    print(f"   X shape: {X.shape}  (samples, seq_len, features)")
-    print(f"   y shape: {y.shape}  (samples, classes)")
-    print(f"   Total samples: {len(X)}")
+    print(f"\n📊 Dataset: {OUTPUT_DIR}")
+    print(f"   X: {X.shape}  y: {y.shape}")
+    print(f"   Total: {len(X)} samples")
 
-    # Save metadata for reproducibility
-    meta = {
-        "sequence_length": SEQUENCE_LENGTH,
-        "feature_dim": FEATURE_DIM,
-        "classes": ["benign", "grooming", "bullying", "night_abuse", "exfiltration"],
-        "samples_per_class": 2000,
-        "total_samples": len(X),
-        "feature_names": [
-            "dst_port_cat", "protocol", "packets_log", "bytes_log",
-            "duration", "bytes_ratio", "iat", "hour_sin", "hour_cos",
-            "unique_dst_5m", "dst_entropy", "is_new_dst"
-        ]
-    }
+    # Class distribution
+    print(f"\n   Label distribution:")
+    names = ["benign", "grooming", "bullying", "night_abuse", "exfiltration"]
+    for i, nm in enumerate(names):
+        cnt = int(y[:, i].sum())
+        print(f"     {nm:15s}: {cnt:6d} ({cnt/len(y)*100:.1f}%)")
+    multi = int((y.sum(axis=1) > 1).sum())
+    print(f"     {'multi-label':15s}: {multi:6d} ({multi/len(y)*100:.1f}%)")
+
+    meta = {"sequence_length": SEQ_LEN, "feature_dim": FEAT_DIM,
+            "classes": names, "total_samples": len(X),
+            "has_augmentation": True, "has_multi_label": True,
+            "has_hard_negatives": True}
     with open(OUTPUT_DIR / "metadata.json", "w") as f:
         json.dump(meta, f, indent=2)
-
-    print(f"   Metadata saved to {OUTPUT_DIR / 'metadata.json'}")
-
 
 if __name__ == "__main__":
     main()

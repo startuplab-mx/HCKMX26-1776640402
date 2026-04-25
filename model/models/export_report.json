@@ -1,8 +1,8 @@
 {
   "onnx_size_mb": 0.3505115509033203,
   "onnx_q8_size_mb": 0.18161964416503906,
-  "inference_avg_ms": 0.2274516283068806,
-  "inference_p95_ms": 0.2667666412889957,
+  "inference_avg_ms": 0.2164403593633324,
+  "inference_p95_ms": 0.2618139609694481,
   "class_names": [
     "benign",
     "grooming",

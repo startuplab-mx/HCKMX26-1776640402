@@ -8,20 +8,8 @@
     "night_abuse",
     "exfiltration"
   ],
-  "samples_per_class": 2000,
-  "total_samples": 10000,
-  "feature_names": [
-    "dst_port_cat",
-    "protocol",
-    "packets_log",
-    "bytes_log",
-    "duration",
-    "bytes_ratio",
-    "iat",
-    "hour_sin",
-    "hour_cos",
-    "unique_dst_5m",
-    "dst_entropy",
-    "is_new_dst"
-  ]
+  "total_samples": 62400,
+  "has_augmentation": true,
+  "has_multi_label": true,
+  "has_hard_negatives": true
 }
