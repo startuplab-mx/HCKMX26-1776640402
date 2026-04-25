@@ -9,11 +9,12 @@ Detailed architecture, data flow, deployment, and execution instructions for the
 1. [System Architecture](#system-architecture)
 2. [Data Flow Pipeline](#data-flow-pipeline)
 3. [Component Details](#component-details)
-4. [Transformer Model Architecture](#transformer-model-architecture)
-5. [How to Run](#how-to-run)
-6. [Deployment to Raspberry Pi](#deployment-to-raspberry-pi)
-7. [Grafana Dashboard Setup](#grafana-dashboard-setup)
-8. [Legal Compliance Module](#legal-compliance-module)
+4. [How Transformers Work](#how-transformers-work)
+5. [Transformer Model Architecture](#transformer-model-architecture)
+6. [How to Run](#how-to-run)
+7. [Deployment to Raspberry Pi](#deployment-to-raspberry-pi)
+8. [Grafana Dashboard Setup](#grafana-dashboard-setup)
+9. [Legal Compliance Module](#legal-compliance-module)
 
 ---
 
@@ -158,6 +159,87 @@ Privacy-preserving panels:
 
 ---
 
+## How Transformers Work
+
+### The Core Idea
+
+A **Transformer** is a neural network architecture introduced in the paper *"Attention Is All You Need"* (Vaswani et al., 2017). It was originally designed for translating text between languages, but its core mechanism — **self-attention** — turns out to be remarkably effective for *any* sequential data, including network traffic flows.
+
+The fundamental question our model answers: **"Given the last 32 network events from this device, does the sequence represent a behavioral risk?"**
+
+### Self-Attention: The Key Mechanism
+
+Imagine a security analyst reviewing a log of 32 network events. They wouldn't look at each event in isolation — they'd compare events against each other:
+
+- *"The child was playing Minecraft at 4:00 PM (event #12) and suddenly connected to Telegram at 4:03 PM (event #18) — that's suspicious."*
+- *"But connecting to YouTube at 8 PM (event #25) after Netflix at 7:30 PM (event #20) — that's normal."*
+
+Self-attention does exactly this, but mathematically. For each event in the sequence, the model computes an **attention score** against every other event:
+
+```
+Event #18 (Telegram at 4:03 PM) pays attention to:
+  Event #12 (Minecraft at 4:00 PM)  →  Attention = 0.85  ← HIGH (port category shift!)
+  Event #15 (YouTube at 3:55 PM)    →  Attention = 0.10  ← LOW (irrelevant)
+  Event #5  (School at 9:00 AM)     →  Attention = 0.02  ← LOW (too far back)
+```
+
+The math behind this uses three learned projections — **Query (Q), Key (K), Value (V)**:
+
+```
+Attention(Q, K, V) = softmax(Q × Kᵀ / √d) × V
+
+Where:
+  Q = "What am I looking for?" (each event asks a question)
+  K = "What do I contain?"    (each event advertises its content)
+  V = "What do I contribute?" (the actual information to aggregate)
+  d = 64 (dimension, for numerical stability)
+```
+
+### Multi-Head Attention
+
+Our model uses **4 attention heads** running in parallel. Each head learns to focus on a different aspect:
+
+| Head | What it might learn |
+|---|---|
+| Head 1 | Port category transitions (gaming → chat) |
+| Head 2 | Temporal patterns (IAT, time of day) |
+| Head 3 | Volume anomalies (bytes, packet counts) |
+| Head 4 | Destination diversity (entropy, new IPs) |
+
+This is like having 4 analysts reviewing the same log, each with a different expertise.
+
+### Why NOT Use RNNs/LSTMs?
+
+Older sequence models (RNNs, LSTMs) process events one-by-one, left to right. They struggle with:
+
+| Problem | RNN/LSTM | Transformer |
+|---|---|---|
+| Long-range dependencies | Forgets early events by event #32 | Every event sees every other event directly |
+| Training speed | Sequential (slow) | Fully parallel (fast) |
+| Variable importance | Fixed decay over distance | Learned attention weights |
+
+For child protection, this matters: a grooming pattern might start at event #5 (gaming) and complete at event #28 (chat). An LSTM might forget event #5 by then; a Transformer won't.
+
+### From Language to Network Flows
+
+| NLP Concept | Our Equivalent |
+|---|---|
+| Word | One network flow event |
+| Sentence | Window of 32 consecutive events |
+| Vocabulary | 12-dimensional feature vector per event |
+| Sentiment analysis | Multi-label risk classification |
+| Token embedding | Linear projection (12 → 64 dimensions) |
+| Position in sentence | Learned positional encoding (32 positions) |
+
+### Why It's Safe for Edge Deployment
+
+| Constraint | Solution |
+|---|---|
+| Raspberry Pi has no GPU | int8 quantization → <1ms on CPU |
+| Must fit in memory | 0.18 MB model (smaller than a JPEG) |
+| Must not require internet | Fully offline inference via ONNX Runtime |
+| Must not need PyTorch | Only numpy + onnxruntime on the Pi |
+
 ## Transformer Model Architecture
 
 ```
@@ -254,7 +336,11 @@ pip install -r requirements.txt
 python3 model/generate_training_data.py
 ```
 
-This creates 10,000 synthetic flow sequences across 5 risk categories in `model/data/`.
+This creates **62,400 synthetic flow sequences** across 5 risk categories, including:
+- Hard negatives (benign gaming, brief night usage)
+- Multi-label combinations (grooming+night, night+exfiltration)
+- Variant patterns (gradual grooming, mild bullying)
+- Noise-augmented copies for robustness
 
 ### Step 3: Train the Model
 
@@ -296,10 +382,17 @@ python3 analyzer.py --mode transformer
 In a separate terminal:
 
 ```bash
+# Quick smoke test (8 events)
 python3 test_analyzer.py
+
+# Full realistic 24-hour simulation (310 events, 4 children's devices)
+python3 test_realistic.py --speed 0
+
+# Single scenario for demos
+python3 test_realistic.py --scenario grooming --speed 0.5
 ```
 
-This sends simulated grooming, bullying, and nocturnal activity patterns to the analyzer.
+The realistic simulator sends traffic from 4 virtual children (Sofía, Diego, Valentina, Mateo) with embedded risk patterns, printing a report of expected vs. actual alerts.
 
 ---
 
