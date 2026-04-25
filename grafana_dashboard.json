@@ -1,0 +1,137 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 1,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": "influxdb-zktca",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 80 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "8.3.3",
+      "targets": [
+        {
+          "query": "SELECT count(\"alert\") FROM \"teachable_moments\" WHERE time >= now() - 1d GROUP BY \"alert_type\"",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Momentos de Enseñanza (Alertas de Riesgo)",
+      "type": "table",
+      "description": "Notificaciones para intervención educativa. No se muestra contenido, solo metadatos conductuales."
+    },
+    {
+      "datasource": "influxdb-zktca",
+      "gridPos": {
+        "h": 15,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 4,
+      "options": {
+        "mapCenter": {
+          "lat": 0,
+          "lon": 0
+        },
+        "mapCenterCustom": {
+          "lat": 23.6345,
+          "lon": -102.5528
+        },
+        "mapZoom": 2,
+        "showLegend": true
+      },
+      "targets": [
+        {
+          "query": "SELECT count(\"bytes\") FROM \"connections\" WHERE time >= now() - 1d GROUP BY \"geoip_country\"",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Heatmap de Riesgo (Conexiones Globales)",
+      "type": "geomap",
+      "description": "Mapa geográfico de exposición a jurisdicciones de riesgo."
+    },
+    {
+      "datasource": "influxdb-zktca",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "id": 6,
+      "targets": [
+        {
+          "query": "SELECT sum(\"duration\") FROM \"night_activity\" WHERE time >= now() - 1d",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Actividad Nocturna Anómala (11 PM - 4 AM)",
+      "type": "stat",
+      "description": "Minutos de actividad humana persistente detectada fuera de horario."
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 34,
+  "style": "dark",
+  "tags": ["child-protection", "wellbeing", "zktca"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Bienestar Digital - MVP ZKTCA (SFP 2026)",
+  "uid": "zktca-wellbeing-mvp",
+  "version": 1
+}
