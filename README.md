@@ -8,34 +8,32 @@ A privacy-first child protection MVP that detects grooming, cyberbullying, noctu
 
 ## 🧩 Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         HOME NETWORK                                    │
-│                                                                         │
-│  ┌──────────────────┐        Syslog (UDP)        ┌───────────────────┐ │
-│  │  📡 ROUTER       │ ─────────────────────────▶ │  🧠 RASPBERRY PI  │ │
-│  │  (OpenWrt)       │   ZKTCA Metadata only      │  (Analyzer)       │ │
-│  │                  │   • src/dst IP              │                   │ │
-│  │  nf_conntrack    │   • ports                   │  ┌─────────────┐ │ │
-│  │  + ulogd2        │   • bytes/packets           │  │ Rule Engine │ │ │
-│  │                  │   • timestamps              │  └──────┬──────┘ │ │
-│  │  hash_enable=0   │                             │         │        │ │
-│  │  (NEW + DESTROY) │                             │  ┌──────▼──────┐ │ │
-│  └──────────────────┘                             │  │ Transformer │ │ │
-│         ▲                                         │  │ (ONNX int8) │ │ │
-│         │                                         │  └──────┬──────┘ │ │
-│  ┌──────┴──────┐                                  │         │        │ │
-│  │ 📱 Devices  │                                  │  ┌──────▼──────┐ │ │
-│  │ (children)  │                                  │  │  Risk Tags  │ │ │
-│  └─────────────┘                                  │  └──────┬──────┘ │ │
-│                                                   └─────────┼────────┘ │
-│                                                             │          │
-│                                                    ┌────────▼───────┐  │
-│                                                    │  📊 GRAFANA    │  │
-│                                                    │  Risk Heatmaps │  │
-│                                                    │  (no URL logs) │  │
-│                                                    └────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph LR
+    subgraph HOME["🏠 HOME NETWORK"]
+        subgraph ROUTER["📡 Router - OpenWrt"]
+            CT["nf_conntrack"] --> ULOGD["ulogd2\nhash_enable=0"]
+        end
+
+        DEVICES["📱 Children's\nDevices"] --> CT
+
+        subgraph RPI["🧠 Raspberry Pi 5"]
+            SYSLOG["Syslog Collector\nPort 5140"] --> RULES["Rule Engine"]
+            SYSLOG --> TRANSFORMER["Transformer\nONNX int8"]
+            RULES --> TAGS["Risk Tags"]
+            TRANSFORMER --> TAGS
+        end
+
+        ULOGD -- "Syslog UDP\nZKTCA Metadata" --> SYSLOG
+
+        TAGS --> GRAFANA["📊 Grafana\nRisk Heatmaps"]
+    end
+
+    style ROUTER fill:#1a1a2e,stroke:#e94560,color:#fff
+    style RPI fill:#0f3460,stroke:#16213e,color:#fff
+    style GRAFANA fill:#533483,stroke:#e94560,color:#fff
+    style DEVICES fill:#222,stroke:#0ea5e9,color:#fff
+    style TAGS fill:#065f46,stroke:#10b981,color:#fff
 ```
 
 ### Key Design Principles
@@ -139,27 +137,24 @@ Transformers solve this by learning **temporal relationships** across sequences 
 
 ### How Our Model Works
 
-```
-Child uses Minecraft for 20 min, then opens Discord
-            │
-            ▼
-    32 flow events extracted from conntrack
-    Each event = 12 features (port, bytes, IAT, hour...)
-            │
-            ▼
-    ┌──────────────────────────┐
-    │   Transformer Encoder   │
-    │   "Is this sequence of   │
-    │    events suspicious?"   │
-    └──────────┬───────────────┘
-               │
-               ▼
-    Probabilities for each risk:
-      grooming:     92%  ← ALERT
-      bullying:      3%
-      night_abuse:   1%
-      exfiltration:  0%
-      benign:        4%
+```mermaid
+graph TD
+    A["🎮 Child plays Minecraft 20 min,\nthen opens Discord"] --> B["32 flow events from conntrack\n12 features each"]
+    B --> C["🧠 Transformer Encoder\nIs this sequence suspicious?"]
+    C --> D["grooming: 92% ⚠️ ALERT"]
+    C --> E["bullying: 3%"]
+    C --> F["night_abuse: 1%"]
+    C --> G["exfiltration: 0%"]
+    C --> H["benign: 4%"]
+
+    style A fill:#1e293b,stroke:#f59e0b,color:#fff
+    style B fill:#1e293b,stroke:#0ea5e9,color:#fff
+    style C fill:#312e81,stroke:#818cf8,color:#fff
+    style D fill:#991b1b,stroke:#ef4444,color:#fff
+    style E fill:#1e293b,stroke:#6b7280,color:#9ca3af
+    style F fill:#1e293b,stroke:#6b7280,color:#9ca3af
+    style G fill:#1e293b,stroke:#6b7280,color:#9ca3af
+    style H fill:#1e293b,stroke:#6b7280,color:#9ca3af
 ```
 
 The key insight: the model doesn't look at **individual packets** — it analyzes the **behavioral pattern** across a window of 32 consecutive events, just as a human analyst would.

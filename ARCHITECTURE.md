@@ -22,41 +22,37 @@ Detailed architecture, data flow, deployment, and execution instructions for the
 
 The system follows a **Sensor → Collector → Analyzer → Dashboard** pipeline with strict separation of concerns:
 
-```
-┌─────────────────┐     ┌──────────────────────────────────────────────┐
-│   LAYER 1       │     │   LAYER 2 — RASPBERRY PI 5                  │
-│   SENSOR        │     │                                              │
-│   (Router)      │     │  ┌────────────┐   ┌────────────────────────┐│
-│                 │     │  │  Syslog    │   │   ANALYSIS ENGINE      ││
-│  ┌───────────┐  │ UDP │  │  Collector │   │                        ││
-│  │ nf_conntrack│─┼─────┼─▶│  (Port    │──▶│  ┌──────────────────┐  ││
-│  └─────┬─────┘  │     │  │   5140)   │   │  │  Rule Engine     │  ││
-│        │        │     │  └────────────┘   │  │  • Grooming      │  ││
-│  ┌─────▼─────┐  │     │                  │  │  • Bullying      │  ││
-│  │  ulogd2   │  │     │                  │  │  • Night abuse   │  ││
-│  │           │  │     │                  │  └────────┬─────────┘  ││
-│  │ hash_en=0 │  │     │                  │           │            ││
-│  │ NFCT+SYSLG│  │     │                  │  ┌────────▼─────────┐  ││
-│  └───────────┘  │     │                  │  │  Transformer     │  ││
-│                 │     │                  │  │  ONNX Runtime    │  ││
-│  OpenWrt 23.05+ │     │                  │  │  (int8, 0.18MB)  │  ││
-└─────────────────┘     │                  │  └────────┬─────────┘  ││
-                        │                  │           │            ││
-                        │                  │  ┌────────▼─────────┐  ││
-                        │                  │  │  Risk Tagger     │  ││
-                        │                  │  │  → Grafana       │  ││
-                        │                  │  │  → Alerts        │  ││
-                        │                  │  └──────────────────┘  ││
-                        │                  └────────────────────────┘│
-                        │                                            │
-                        │  ┌────────────────────────────────────────┐│
-                        │  │  LAYER 3 — VISUALIZATION               ││
-                        │  │  Grafana + InfluxDB                    ││
-                        │  │  • Risk Heatmaps (no URL logs)         ││
-                        │  │  • Teachable Moments alerts            ││
-                        │  │  • ARCO rights panel                   ││
-                        │  └────────────────────────────────────────┘│
-                        └──────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph L1["LAYER 1 — SENSOR / Router"]
+        CT["nf_conntrack"] --> ULOGD["ulogd2\nhash_enable=0\nNFCT + SYSLOG"]
+    end
+
+    subgraph L2["LAYER 2 — RASPBERRY PI 5"]
+        subgraph COLLECTOR["Syslog Collector"]
+            SYS["Port 5140"]
+        end
+        subgraph ENGINE["Analysis Engine"]
+            RULES["Rule Engine\n- Grooming\n- Bullying\n- Night abuse"]
+            TRANS["Transformer\nONNX Runtime\nint8, 0.18MB"]
+            TAGGER["Risk Tagger\n-> Grafana\n-> Alerts"]
+        end
+        SYS --> RULES
+        SYS --> TRANS
+        RULES --> TAGGER
+        TRANS --> TAGGER
+    end
+
+    subgraph L3["LAYER 3 — VISUALIZATION"]
+        GRAF["Grafana + InfluxDB\n- Risk Heatmaps\n- Teachable Moments\n- ARCO rights panel"]
+    end
+
+    ULOGD -- "UDP Syslog" --> SYS
+    TAGGER --> GRAF
+
+    style L1 fill:#1a1a2e,stroke:#e94560,color:#fff
+    style L2 fill:#0f3460,stroke:#16213e,color:#fff
+    style L3 fill:#533483,stroke:#e94560,color:#fff
 ```
 
 ### Hardware Requirements
@@ -71,31 +67,27 @@ The system follows a **Sensor → Collector → Analyzer → Dashboard** pipelin
 
 ## Data Flow Pipeline
 
-```
-[Device Traffic]
-      │
-      ▼
-[nf_conntrack]  ── Kernel tracks all TCP/UDP connections
-      │
-      ▼
-[ulogd2]        ── Extracts metadata on NEW and DESTROY events
-      │              (hash_enable=0 for separate events)
-      ▼
-[Syslog UDP]    ── Sends ZKTCA_METADATA formatted logs
-      │              to Raspberry Pi port 5140
-      ▼
-[analyzer.py]   ── Parses metadata, extracts 12-dim features
-      │
-      ├──▶ [Rule Engine]       ── Static threshold checks
-      │         │
-      ├──▶ [Transformer]       ── Sliding window (32 events)
-      │         │                  ONNX inference (<1ms)
-      │         │
-      ▼         ▼
-[Risk Tags]  ── benign | grooming | bullying | night_abuse | exfiltration
-      │
-      ▼
-[Grafana]    ── Risk heatmaps, teachable moments, ARCO panel
+```mermaid
+graph TD
+    A["📱 Device Traffic"] --> B["nf_conntrack\nKernel tracks all TCP/UDP"]
+    B --> C["ulogd2\nExtracts metadata on NEW/DESTROY\nhash_enable=0"]
+    C --> D["Syslog UDP\nZKTCA_METADATA format\nto RPi port 5140"]
+    D --> E["analyzer.py\nParses metadata, extracts 12-dim features"]
+    E --> F["Rule Engine\nStatic threshold checks"]
+    E --> G["Transformer\nSliding window of 32 events\nONNX inference < 1ms"]
+    F --> H["Risk Tags\nbenign | grooming | bullying\nnight_abuse | exfiltration"]
+    G --> H
+    H --> I["📊 Grafana\nRisk heatmaps, teachable moments"]
+
+    style A fill:#1e293b,stroke:#0ea5e9,color:#fff
+    style B fill:#1a1a2e,stroke:#e94560,color:#fff
+    style C fill:#1a1a2e,stroke:#e94560,color:#fff
+    style D fill:#1a1a2e,stroke:#f59e0b,color:#fff
+    style E fill:#0f3460,stroke:#818cf8,color:#fff
+    style F fill:#0f3460,stroke:#10b981,color:#fff
+    style G fill:#312e81,stroke:#818cf8,color:#fff
+    style H fill:#065f46,stroke:#10b981,color:#fff
+    style I fill:#533483,stroke:#e94560,color:#fff
 ```
 
 ### Metadata Format (ZKTCA)
@@ -242,34 +234,24 @@ For child protection, this matters: a grooming pattern might start at event #5 (
 
 ## Transformer Model Architecture
 
-```
-Input: (batch, 32, 12)
-         │
-    ┌────▼────┐
-    │ Linear  │  12 → 64 (input projection)
-    └────┬────┘
-         │
-    ┌────▼──────────────┐
-    │ Positional        │  Learned embeddings (32 positions)
-    │ Encoding          │
-    └────┬──────────────┘
-         │
-    ┌────▼──────────────┐
-    │ TransformerEncoder │  Layer 1: 4 heads, d=64, ff=128, GELU
-    │ TransformerEncoder │  Layer 2: 4 heads, d=64, ff=128, GELU
-    └────┬──────────────┘
-         │
-    ┌────▼────┐
-    │  Mean   │  Pool over sequence dimension
-    │ Pooling │
-    └────┬────┘
-         │
-    ┌────▼──────────────┐
-    │ Classification    │  LayerNorm → Linear(64,64) → GELU
-    │ Head              │  → Dropout → Linear(64,5) → Sigmoid
-    └────┬──────────────┘
-         │
-Output: (batch, 5)  →  [benign, grooming, bullying, night_abuse, exfiltration]
+```mermaid
+graph TD
+    INPUT["Input: batch, 32, 12"] --> PROJ["Linear Projection\n12 → 64"]
+    PROJ --> POS["Positional Encoding\nLearned embeddings, 32 positions"]
+    POS --> ENC1["Transformer Encoder Layer 1\n4 heads, d=64, ff=128, GELU"]
+    ENC1 --> ENC2["Transformer Encoder Layer 2\n4 heads, d=64, ff=128, GELU"]
+    ENC2 --> POOL["Mean Pooling\nPool over sequence dimension"]
+    POOL --> CLS["Classification Head\nLayerNorm → Linear 64,64 → GELU\n→ Dropout → Linear 64,5 → Sigmoid"]
+    CLS --> OUT["Output: batch, 5\nbenign | grooming | bullying\nnight_abuse | exfiltration"]
+
+    style INPUT fill:#1e293b,stroke:#0ea5e9,color:#fff
+    style PROJ fill:#1e293b,stroke:#f59e0b,color:#fff
+    style POS fill:#1e293b,stroke:#f59e0b,color:#fff
+    style ENC1 fill:#312e81,stroke:#818cf8,color:#fff
+    style ENC2 fill:#312e81,stroke:#818cf8,color:#fff
+    style POOL fill:#0f3460,stroke:#0ea5e9,color:#fff
+    style CLS fill:#065f46,stroke:#10b981,color:#fff
+    style OUT fill:#991b1b,stroke:#ef4444,color:#fff
 ```
 
 ### Feature Vector (12 dimensions per flow event)
