@@ -84,6 +84,12 @@ DEVICES = {
         "risk": "night_abuse+exfiltration",
         "description": "Actividad nocturna persistente y subida masiva de archivos",
     },
+    "carlos": {
+        "ip": "192.168.1.104",
+        "name": "Carlos, 15 años",
+        "risk": "recruitment",
+        "description": "Reclutamiento criminal: redes sociales → grupo cifrado + media pesada",
+    },
 }
 
 # ==========================================
@@ -366,6 +372,68 @@ def generate_mateo(base_time, speed_delay):
     return events
 
 
+def generate_carlos(base_time, speed_delay):
+    """Carlos — Criminal recruitment: social media → encrypted group chat + large inbound media."""
+    ip = DEVICES["carlos"]["ip"]
+    events = 0
+    print(f"  🔫 Carlos (192.168.1.104) — Reclutamiento criminal")
+
+    # Normal morning school
+    t = base_time.replace(hour=9, minute=0)
+    for i in range(6):
+        send_flow(ip, "school_portal", t.timestamp(), duration_s=90)
+        t += timedelta(minutes=random.randint(5, 10))
+        time.sleep(speed_delay)
+        events += 2
+
+    # Afternoon: normal TikTok / Instagram (contact surface)
+    t = base_time.replace(hour=15, minute=0)
+    for i in range(8):
+        svc = random.choice(["tiktok", "instagram"])
+        send_flow(ip, svc, t.timestamp(), duration_s=random.randint(30, 120))
+        t += timedelta(minutes=random.randint(2, 5))
+        time.sleep(speed_delay)
+        events += 2
+
+    # ⚠️ RECRUITMENT TRIGGER: 17:30 — migration to encrypted group + large downloads
+    t = base_time.replace(hour=17, minute=30)
+    print(f"    ⚠️  17:30 — Migración a grupo cifrado (Telegram)")
+
+    # Encrypted group chat with large inbound media (propaganda videos)
+    for i in range(10):
+        svc = random.choice(["telegram", "discord"])
+        dst_ip = random.choice(SERVICES[svc]["ips"])
+        src_port = random.randint(40000, 60000)
+        # Large INBOUND media: 5-50 MB per flow (recruitment videos/propaganda)
+        send_event(dst_ip, ip, 443, src_port, 6,
+                   packets=random.randint(500, 5000),
+                   bytes_val=random.randint(5_000_000, 50_000_000),
+                   event="NEW", timestamp=int(t.timestamp()))
+        t += timedelta(seconds=random.randint(30, 120))
+        time.sleep(speed_delay)
+        events += 1
+
+    # More group chat activity (text messages interspersed)
+    print(f"    ⚠️  18:00 — Actividad sostenida en grupo cifrado")
+    t = base_time.replace(hour=18, minute=0)
+    for i in range(8):
+        svc = random.choice(["telegram", "discord"])
+        send_flow(ip, svc, t.timestamp(), duration_s=random.randint(60, 600))
+        t += timedelta(minutes=random.randint(2, 8))
+        time.sleep(speed_delay)
+        events += 2
+
+    # Evening: some benign traffic
+    t = base_time.replace(hour=20, minute=0)
+    for i in range(4):
+        send_flow(ip, "youtube", t.timestamp(), duration_s=180)
+        t += timedelta(minutes=5)
+        time.sleep(speed_delay)
+        events += 2
+
+    return events
+
+
 # ==========================================
 # Report Generator
 # ==========================================
@@ -395,6 +463,7 @@ def print_report(event_counts, start_time):
     print("    👊 BULLYING      — Valentina (192.168.1.102) @ ~14:15")
     print("    🌙 NIGHT ABUSE   — Mateo (192.168.1.103) @ ~01:00")
     print("    📤 EXFILTRATION  — Mateo (192.168.1.103) @ ~02:10")
+    print("    🔫 RECRUITMENT   — Carlos (192.168.1.104) @ ~17:30")
     print("    ✅ NO ALERTS     — Sofía (192.168.1.100) — control limpio")
     print("═" * 58)
 
@@ -404,7 +473,7 @@ def print_report(event_counts, start_time):
 # ==========================================
 def main():
     parser = argparse.ArgumentParser(description="ZKTCA Realistic Traffic Simulator")
-    parser.add_argument("--scenario", choices=["all", "grooming", "bullying", "night", "benign"],
+    parser.add_argument("--scenario", choices=["all", "grooming", "bullying", "night", "recruitment", "benign"],
                         default="all", help="Scenario to simulate (default: all)")
     parser.add_argument("--speed", type=float, default=0.02,
                         help="Delay between events in seconds. 0=fastest, 0.5=slow demo (default: 0.02)")
@@ -432,10 +501,11 @@ def main():
     wall_start = time.time()
 
     scenarios = {
-        "benign":   ("sofia",     generate_sofia),
-        "grooming": ("diego",     generate_diego),
-        "bullying": ("valentina", generate_valentina),
-        "night":    ("mateo",     generate_mateo),
+        "benign":      ("sofia",     generate_sofia),
+        "grooming":    ("diego",     generate_diego),
+        "bullying":    ("valentina", generate_valentina),
+        "night":       ("mateo",     generate_mateo),
+        "recruitment": ("carlos",    generate_carlos),
     }
 
     if args.scenario == "all":

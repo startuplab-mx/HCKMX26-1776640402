@@ -116,8 +116,8 @@ def show_event(device_name, device_color, service_name, direction="→", extra="
     print(f"  {C.DIM}{ts}{C.RESET}  {device_color}{device_name:12s}{C.RESET} {direction} {svc_color}{icon} {service_name:12s}{C.RESET} {C.DIM}{extra}{C.RESET}")
 
 def show_alert(alert_type, device, confidence, details=""):
-    icons = {"GROOMING": "🎯", "BULLYING": "👊", "NIGHT ABUSE": "🌙", "EXFILTRATION": "📤"}
-    colors = {"GROOMING": C.MAGENTA, "BULLYING": C.RED, "NIGHT ABUSE": C.BLUE, "EXFILTRATION": C.YELLOW}
+    icons = {"GROOMING": "🎯", "BULLYING": "👊", "NIGHT ABUSE": "🌙", "EXFILTRATION": "📤", "RECRUITMENT": "🔫"}
+    colors = {"GROOMING": C.MAGENTA, "BULLYING": C.RED, "NIGHT ABUSE": C.BLUE, "EXFILTRATION": C.YELLOW, "RECRUITMENT": C.RED}
     icon = icons.get(alert_type, "⚠️")
     color = colors.get(alert_type, C.RED)
     bar_len = int(confidence / 100 * 20)
@@ -160,7 +160,7 @@ def demo_intro(fast):
 
     print()
     print(f"  {C.GREEN}{C.BOLD}✅ System ready — Hybrid mode (Rules + Transformer){C.RESET}")
-    print(f"  {C.DIM}   Monitoring 4 devices on 192.168.1.0/24{C.RESET}")
+    print(f"  {C.DIM}   Monitoring 5 devices on 192.168.1.0/24{C.RESET}")
     pause(fast, 2)
 
 
@@ -302,6 +302,43 @@ def demo_night_abuse(fast):
     pause(fast, 2)
 
 
+def demo_recruitment(fast):
+    header("PHASE 5: Criminal Recruitment Detection")
+    print(f"  {C.DIM}Carlos (15 years old) — Social media → encrypted group chat{C.RESET}\n")
+
+    base = datetime.now().replace(hour=15, minute=0)
+    ip = "192.168.1.104"
+    name = "Carlos"
+    color = C.RED
+
+    # Social media phase
+    social_services = ["TikTok", "TikTok", "Instagram", "TikTok", "Instagram"]
+    for i, svc in enumerate(social_services):
+        send(ip, svc, base.timestamp())
+        show_event(name, color, svc, extra=f"Browsing #{i+1}")
+        base += timedelta(minutes=random.randint(2, 5))
+        pause(fast, 0.25)
+
+    # Transition
+    print(f"\n  {C.RED}{C.BOLD}  ⚠️  Migration to encrypted group...{C.RESET}\n")
+    pause(fast, 1)
+
+    # Encrypted group + large inbound media
+    base = datetime.now().replace(hour=17, minute=30)
+    for i in range(8):
+        svc = random.choice(["Telegram", "Discord"])
+        size_mb = random.randint(5, 50)
+        send(ip, svc, base.timestamp(), packets=random.randint(500, 5000),
+             bytes_val=size_mb * 1_000_000)
+        show_event(name, color, svc, extra=f"⬇️ Download {size_mb} MB (video)")
+        base += timedelta(seconds=random.randint(30, 120))
+        pause(fast, 0.3)
+
+    show_alert("RECRUITMENT", "Carlos (192.168.1.104)", 91.2,
+               "Social media → group + large inbound media")
+    pause(fast, 2)
+
+
 def demo_summary(fast):
     header("DEMO COMPLETE — Risk Summary")
 
@@ -310,6 +347,7 @@ def demo_summary(fast):
         ("Diego",     "192.168.1.101", "14", "🎯 GROOMING",     C.MAGENTA, "Gaming → chat transition"),
         ("Valentina", "192.168.1.102", "10", "👊 BULLYING",      C.RED,     "12 unique IPs inbound burst"),
         ("Mateo",     "192.168.1.103", "16", "🌙📤 NIGHT+EXFIL", C.YELLOW,  "1AM activity + 560MB upload"),
+        ("Carlos",    "192.168.1.104", "15", "🔫 RECRUITMENT",  C.RED,     "Social → group + propaganda DL"),
     ]
 
     print(f"  {C.BOLD}{'Name':12s} {'IP':18s} {'Age':4s} {'Status':20s} {'Detail'}{C.RESET}")
@@ -321,6 +359,7 @@ def demo_summary(fast):
     print()
     print(f"  {C.BOLD}{C.CYAN}System Stats:{C.RESET}")
     print(f"  {C.DIM}  Model: ONNX int8 (0.18 MB) | Inference: <1ms | Privacy: Zero-Knowledge{C.RESET}")
+    print(f"  {C.DIM}  6 risk classes: benign | grooming | bullying | night | exfil | recruitment{C.RESET}")
     print(f"  {C.DIM}  No URLs logged | No content inspected | No encryption broken{C.RESET}")
     print(f"  {C.DIM}  Compliant: Mexican SFP 2026 / Interés Superior del Menor{C.RESET}")
     print()
@@ -351,6 +390,7 @@ def main():
         demo_grooming(args.fast)
         demo_bullying(args.fast)
         demo_night_abuse(args.fast)
+        demo_recruitment(args.fast)
         demo_summary(args.fast)
     except KeyboardInterrupt:
         print(f"\n{C.DIM}  Demo interrupted.{C.RESET}")
