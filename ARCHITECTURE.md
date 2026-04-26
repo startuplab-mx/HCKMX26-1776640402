@@ -34,8 +34,8 @@ graph TB
             SYS["Port 5140"]
         end
         subgraph ENGINE["Analysis Engine"]
-            RULES["Rule Engine\n- Grooming\n- Bullying\n- Night abuse"]
-            TRANS["Transformer\nONNX Runtime\nint8, 0.18MB"]
+            RULES["Rule Engine\n- Grooming\n- Bullying\n- Night abuse\n- Recruitment"]
+            TRANS["Transformer\nONNX Runtime\nint8, 0.18MB\n6 classes"]
             TAGGER["Risk Tagger\n-> Grafana\n-> Alerts"]
         end
         SYS --> RULES
@@ -286,7 +286,44 @@ The model identifies sustained, upload-heavy flows to known cloud storage IP ran
 
 ---
 
-### 5. Encrypted Traffic Classification (ZKTCA Paradigm)
+### 5. Criminal Recruitment — Encrypted Group + Propaganda Download Pattern
+
+#### Why is it a risk?
+
+In Mexico and Latin America, criminal organizations (cartels, gangs) actively recruit minors through social media platforms. Research by **Décary-Hétu & Morselli (2011)** and **Pyrooz et al. (2015)** documents how digital platforms have become primary recruitment channels:
+
+- **Initial contact** — Recruiters use public platforms (TikTok, Instagram) to identify and approach vulnerable youth
+- **Platform migration** — Targets are quickly moved to encrypted group chats (Telegram, Signal) to avoid platform moderation
+- **Propaganda distribution** — Recruitment videos, lifestyle content, and instructional material are shared as large media files
+- **Group dynamics** — Unlike grooming (1-on-1), recruitment uses group chats with multiple participants
+
+The **UNODC World Drug Report (2023)** and **InSight Crime** document that Mexican cartels increasingly use social media to recruit children as young as 12 as lookouts (*halcones*), drug runners, or for other criminal activities.
+
+#### How we detect it through metadata
+
+The recruitment pattern differs from grooming in two critical ways: **(1) direction of media flow** and **(2) group topology**:
+
+| Metric | Grooming | Recruitment |
+|---|---|---|
+| Media direction | Child **uploads** (exfiltration) | Child **downloads** (propaganda) |
+| Bytes ratio | Upload-heavy (>0.7) | **Download-heavy (<0.25)** |
+| Communication type | 1-on-1 | **Group (many unique IPs)** |
+| Download sizes | Small (chat messages) | **Large (5-50 MB per flow)** |
+| Contact diversity | 1-3 unique IPs | **8-20 unique IPs** |
+| Transition pattern | Gaming → private chat | Social media → **encrypted group** |
+
+The Transformer detects the combination of: social media browsing phase → migration to encrypted group platform → sustained large inbound downloads (propaganda videos), with high contact diversity but *cooperative* (not hostile like bullying).
+
+#### References
+
+- Décary-Hétu, D., & Morselli, C. (2011). Gang presence in social network sites. *International Journal of Cyber Criminology*, 5(2), 876–890.
+- Pyrooz, D. C., Decker, S. H., & Moule, R. K. (2015). Criminal and routine activities in online settings: Gangs, offenders, and the Internet. *Justice Quarterly*, 32(3), 471–499. [DOI: 10.1080/07418825.2013.778326](https://doi.org/10.1080/07418825.2013.778326)
+- UNODC. (2023). *World Drug Report 2023*. United Nations Office on Drugs and Crime. [unodc.org](https://www.unodc.org/unodc/en/data-and-analysis/world-drug-report-2023.html)
+- Patton, D. U., Hong, J. S., Ranney, M., Patel, S., Kelley, C., Eschmann, R., & Washington, T. (2014). Social media as a vector for youth violence: A review of the literature. *Computers in Human Behavior*, 35, 548–553. [DOI: 10.1016/j.chb.2014.02.043](https://doi.org/10.1016/j.chb.2014.02.043)
+
+---
+
+### 6. Encrypted Traffic Classification (ZKTCA Paradigm)
 
 All detection happens without decrypting traffic. This is possible because of advances in **encrypted traffic classification** using only flow-level metadata:
 
@@ -386,8 +423,8 @@ graph TD
     POS --> ENC1["Transformer Encoder Layer 1\n4 heads, d=64, ff=128, GELU"]
     ENC1 --> ENC2["Transformer Encoder Layer 2\n4 heads, d=64, ff=128, GELU"]
     ENC2 --> POOL["Mean Pooling\nPool over sequence dimension"]
-    POOL --> CLS["Classification Head\nLayerNorm → Linear 64,64 → GELU\n→ Dropout → Linear 64,5 → Sigmoid"]
-    CLS --> OUT["Output: batch, 5\nbenign | grooming | bullying\nnight_abuse | exfiltration"]
+    POOL --> CLS["Classification Head\nLayerNorm → Linear 64,64 → GELU\n→ Dropout → Linear 64,6 → Sigmoid"]
+    CLS --> OUT["Output: batch, 6\nbenign | grooming | bullying\nnight_abuse | exfiltration | recruitment"]
 
     style INPUT fill:#1e293b,stroke:#0ea5e9,color:#fff
     style PROJ fill:#1e293b,stroke:#f59e0b,color:#fff

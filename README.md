@@ -2,7 +2,7 @@
 
 > **Zero-Knowledge Traffic Classification Analysis** for behavioral risk detection at the router level.
 
-A privacy-first child protection MVP that detects grooming, cyberbullying, nocturnal abuse, and data exfiltration using **only network metadata** — no content inspection, no DPI, no decryption.
+A privacy-first child protection MVP that detects grooming, cyberbullying, nocturnal abuse, data exfiltration, and **criminal recruitment** using **only network metadata** — no content inspection, no DPI, no decryption.
 
 ---
 
@@ -58,11 +58,11 @@ theat_not_found/
 ├── ulogd.conf                       # Router sensor configuration (OpenWrt)
 ├── analyzer.py                      # Main analysis engine (rules + transformer)
 ├── test_analyzer.py                 # Basic traffic tests (8 events)
-├── test_realistic.py                # Realistic 24h simulator (310 events, 4 devices)
+├── test_realistic.py                # Realistic 24h simulator (400+ events, 5 devices)
 ├── grafana_dashboard.json           # Grafana dashboard model (risk heatmaps)
 └── model/
     ├── platform_utils.py            # OS detection (macOS/Linux/Windows)
-    ├── generate_training_data.py    # Enhanced dataset generator (62K+ samples)
+    ├── generate_training_data.py    # Enhanced dataset generator (79K+ samples, 6 classes)
     ├── transformer_model.py         # Transformer architecture (PyTorch)
     ├── train.py                     # Training script (MPS / CUDA / CPU)
     ├── export_onnx.py               # ONNX export + int8 quantization
@@ -78,7 +78,7 @@ theat_not_found/
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Generate synthetic training data (62,400 samples)
+# 2. Generate synthetic training data (79,200 samples)
 python3 model/generate_training_data.py
 
 # 3. Train the transformer (auto-detects GPU)
@@ -106,6 +106,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed setup, configuration, and de
 | **Bullying** | Burst of traffic from many sources | >10 unique IPs, asymmetric download-heavy |
 | **Night Abuse** | Persistent activity 11PM–4AM | Human-like IAT patterns in restricted hours |
 | **Exfiltration** | Large uploads to cloud storage | >50MB upload ratio to unauthorized servers |
+| **Recruitment** | Social media → encrypted group + large inbound media | Platform migration + download-heavy group traffic |
 
 ---
 
@@ -133,7 +134,7 @@ Transformers solve this by learning **temporal relationships** across sequences 
 1. **Self-Attention** — Each flow event "looks at" every other event in the window, finding correlations like "gaming packet 5 minutes ago → encrypted chat now"
 2. **Positional Encoding** — The model knows the order of events, detecting that a gaming→chat transition is suspicious but chat→gaming is normal
 3. **Multi-head Attention** — 4 parallel attention heads specialize in different patterns (one might focus on port transitions, another on timing)
-4. **Sequence Classification** — After encoding the full context, a classification head outputs probabilities for all 5 risk categories simultaneously
+4. **Sequence Classification** — After encoding the full context, a classification head outputs probabilities for all 6 risk categories simultaneously
 
 ### How Our Model Works
 
@@ -146,6 +147,7 @@ graph TD
     C --> F["night_abuse: 1%"]
     C --> G["exfiltration: 0%"]
     C --> H["benign: 4%"]
+    C --> I["recruitment: 0%"]
 
     style A fill:#1e293b,stroke:#f59e0b,color:#fff
     style B fill:#1e293b,stroke:#0ea5e9,color:#fff
@@ -155,6 +157,7 @@ graph TD
     style F fill:#1e293b,stroke:#6b7280,color:#9ca3af
     style G fill:#1e293b,stroke:#6b7280,color:#9ca3af
     style H fill:#1e293b,stroke:#6b7280,color:#9ca3af
+    style I fill:#1e293b,stroke:#6b7280,color:#9ca3af
 ```
 
 The key insight: the model doesn't look at **individual packets** — it analyzes the **behavioral pattern** across a window of 32 consecutive events, just as a human analyst would.
@@ -168,27 +171,31 @@ The key insight: the model doesn't look at **individual packets** — it analyze
 | Size (quantized) | 0.18 MB (int8) |
 | Inference | <1ms (Mac), ~5ms (RPi 5 est.) |
 | Validation F1 | 1.000 |
-| Training data | 62,400 samples (multi-label, hard negatives, augmented) |
+| Training data | 79,200 samples (multi-label, hard negatives, augmented) |
 | Training | Auto-detects: MPS (Mac), CUDA (Linux/Win), CPU |
 
 ### Training Data
 
-The model is trained on **62,400 synthetic flow sequences** designed to cover:
+The model is trained on **79,200 synthetic flow sequences** designed to cover:
 
 | Category | Samples | Description |
 |---|---|---|
 | Benign (normal) | 8,000 | School, YouTube, Netflix — standard browsing |
 | Benign (gaming) | 2,000 | Pure gaming sessions (hard negative — should NOT trigger grooming) |
 | Benign (brief night) | 2,000 | Quick late-night check (hard negative — should NOT trigger night abuse) |
+| Benign (group chat) | 2,000 | School project group chat (hard negative — should NOT trigger recruitment) |
 | Grooming (abrupt) | 8,000 | Sudden gaming → chat switch |
 | Grooming (gradual) | 2,000 | Interleaved gaming + chat transition |
 | Bullying (severe) | 8,000 | 15+ source IPs flooding a device |
 | Bullying (mild) | 2,000 | 5-10 source IPs, lower volume |
 | Night abuse | 8,000 | Persistent 11PM-4AM activity with human IAT |
 | Exfiltration | 8,000 | >50MB uploads to cloud storage |
+| Recruitment (rapid) | 8,000 | Social media → encrypted group + large inbound propaganda |
+| Recruitment (gradual) | 2,000 | Gradual engagement with increasing download sizes |
 | Grooming + Night | 2,000 | Multi-label: gaming→chat at 1AM |
 | Night + Exfiltration | 2,000 | Multi-label: uploads at 2AM |
-| Noise-augmented | 10,400 | Gaussian noise copies for robustness |
+| Recruitment + Night | 2,000 | Multi-label: group recruitment at night |
+| Noise-augmented | 13,200 | Gaussian noise copies for robustness |
 
 ---
 
@@ -201,16 +208,18 @@ python3 test_analyzer.py  # 8 events, quick smoke test
 
 ### Realistic 24-Hour Simulation
 ```bash
-python3 test_realistic.py --speed 0       # Fast (310 events)
+python3 test_realistic.py --speed 0       # Fast (400+ events)
 python3 test_realistic.py --speed 0.5     # Slow demo
-python3 test_realistic.py --scenario grooming  # Single scenario
+python3 test_realistic.py --scenario grooming    # Single scenario
+python3 test_realistic.py --scenario recruitment # Recruitment only
 ```
 
-Simulates 4 children's devices over a full day:
+Simulates 5 children's devices over a full day:
 - **Sofía** (12) — Normal usage (control, zero alerts expected)
 - **Diego** (14) — Grooming: Minecraft → Discord at 4:28 PM
 - **Valentina** (10) — Bullying: 15 IPs flooding at 2:15 PM
 - **Mateo** (16) — Night abuse (1AM) + exfiltration (2:10 AM)
+- **Carlos** (15) — Criminal recruitment: TikTok → Telegram group + propaganda downloads at 5:30 PM
 
 ---
 
