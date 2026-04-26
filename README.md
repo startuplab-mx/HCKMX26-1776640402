@@ -4,6 +4,12 @@
 
 A privacy-first child protection MVP that detects grooming, cyberbullying, nocturnal abuse, data exfiltration, and **criminal recruitment** using **only network metadata** — no content inspection, no DPI, no decryption.
 
+## 🎬 Demo
+
+📹 **[Watch the live demo recordings](https://drive.google.com/drive/folders/1XchzkduCaUc7Vj-_E02qqwcFZwOFJ0J1?usp=sharing)**
+
+> *Live system demo showing the ZKTCA pipeline detecting 6 risk scenarios across 5 simulated children's devices — grooming, bullying, night abuse, exfiltration, and criminal recruitment.*
+
 ---
 
 ## 🧩 Architecture
