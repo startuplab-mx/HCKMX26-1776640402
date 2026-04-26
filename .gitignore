@@ -1,0 +1,16 @@
+# Research documents
+Architectural Framework for Behavioral Telemetry and Machine Learning-Based Child Protection Systems at the Router Level.pdf
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
