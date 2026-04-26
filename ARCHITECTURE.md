@@ -9,12 +9,13 @@ Detailed architecture, data flow, deployment, and execution instructions for the
 1. [System Architecture](#system-architecture)
 2. [Data Flow Pipeline](#data-flow-pipeline)
 3. [Component Details](#component-details)
-4. [How Transformers Work](#how-transformers-work)
-5. [Transformer Model Architecture](#transformer-model-architecture)
-6. [How to Run](#how-to-run)
-7. [Deployment to Raspberry Pi](#deployment-to-raspberry-pi)
-8. [Grafana Dashboard Setup](#grafana-dashboard-setup)
-9. [Legal Compliance Module](#legal-compliance-module)
+4. [Scientific Foundations](#scientific-foundations)
+5. [How Transformers Work](#how-transformers-work)
+6. [Transformer Model Architecture](#transformer-model-architecture)
+7. [How to Run](#how-to-run)
+8. [Deployment to Raspberry Pi](#deployment-to-raspberry-pi)
+9. [Grafana Dashboard Setup](#grafana-dashboard-setup)
+10. [Legal Compliance Module](#legal-compliance-module)
 
 ---
 
@@ -151,7 +152,151 @@ Privacy-preserving panels:
 
 ---
 
-## How Transformers Work
+## Scientific Foundations
+
+Each risk category in the ZKTCA system is grounded in published research on child online safety, behavioral psychology, and network security. This section explains **why** each pattern constitutes a risk and **how** it manifests in network metadata — without ever inspecting content.
+
+### 1. Online Grooming — Platform Migration Pattern
+
+#### Why is it a risk?
+
+Online grooming follows a well-documented behavioral model where a predator progressively manipulates a child through several stages. Research by **Kloess et al. (2014)** and the **O'Connell model (2003)** describe these stages as:
+
+1. **Friendship forming** — Initial contact on a public platform (gaming, social media)
+2. **Relationship forming** — Building trust and emotional dependency
+3. **Risk assessment** — Testing whether the child will keep secrets
+4. **Exclusivity** — Isolating the child from peers and parents
+5. **Sexual stage** — Introducing explicit content or requests
+
+A critical observable behavior is **"platform migration"** or **"off-platforming"** (WeProtect Global Alliance, 2023): predators initiate contact on mainstream, moderated platforms (like Minecraft or Roblox) and then rapidly move the conversation to private, encrypted channels (Discord DMs, Telegram, WhatsApp) to evade parental controls and platform moderation.
+
+#### How we detect it through metadata
+
+We do **not** read messages. Instead, we observe the **port category transition pattern** in the network flow:
+
+| Time | Destination Port | Category | What the model sees |
+|---|---|---|---|
+| 16:00 – 16:27 | 19132 (Minecraft) | Gaming (UDP) | Stable gaming pattern |
+| 16:28 – 16:30 | 443 (Discord) | Chat (TCP) | **Abrupt category shift** |
+| 16:30 – 17:00 | 443 (Telegram) | Chat (TCP) | Sustained encrypted chat |
+
+The Transformer detects that the **temporal sequence** — sustained gaming followed by rapid migration to encrypted chat — matches grooming-stage-4 isolation behavior.
+
+#### References
+
+- O'Connell, R. (2003). *A Typology of Child Cybersexploitation and Online Grooming Practices*. University of Central Lancashire.
+- Kloess, J. A., Beech, A. R., & Harkins, L. (2014). Online child sexual exploitation: Prevalence, process, and offender characteristics. *Trauma, Violence, & Abuse*, 15(2), 126–139. [DOI: 10.1177/1524838013511543](https://doi.org/10.1177/1524838013511543)
+- Whittle, H. C., Hamilton-Giachritsis, C., Beech, A. R., & Collings, G. (2013). A review of online grooming: Characteristics and concerns. *Aggression and Violent Behavior*, 18(1), 62–70. [DOI: 10.1016/j.avb.2012.09.003](https://doi.org/10.1016/j.avb.2012.09.003)
+- WeProtect Global Alliance. (2023). *Global Threat Assessment 2023*. [weprotect.org](https://www.weprotect.org/global-threat-assessment/)
+
+---
+
+### 2. Cyberbullying — Coordinated Inbound Burst Pattern
+
+#### Why is it a risk?
+
+Cyberbullying differs from traditional bullying in its scale and persistence. Research by **Kowalski et al. (2014)** and **Hinduja & Patchin (2015)** identifies key characteristics of online harassment:
+
+- **Asymmetry** — Multiple aggressors target a single victim
+- **Intensity** — Concentrated bursts of messages/media in short windows
+- **Anonymity** — Aggressors use multiple accounts or IPs
+- **Persistence** — Digital content remains accessible after the attack
+
+A coordinated cyberbullying attack (sometimes called a "raid" or "pile-on") produces a distinctive network signature: a **single target IP receiving inbound connections from many unique source IPs within a short time window**, with highly asymmetric traffic (much more data received than sent).
+
+#### How we detect it through metadata
+
+| Metric | Normal browsing | Bullying attack |
+|---|---|---|
+| Unique source IPs (5 min) | 2-5 | **10-30** |
+| Bytes ratio (up/down) | 0.3-0.7 | **< 0.2** (download-heavy) |
+| Inter-arrival time | 0.5-10s | **< 0.5s** (rapid burst) |
+| Destination entropy | 0.3-0.6 | **> 0.8** (high diversity) |
+
+The model correlates the simultaneous spike in unique sources, asymmetric bytes ratio, and rapid IAT as a bullying pattern.
+
+#### References
+
+- Kowalski, R. M., Giumetti, G. W., Schroeder, A. N., & Lattanner, M. R. (2014). Bullying in the Digital Age: A Critical Review and Meta-Analysis. *Psychological Bulletin*, 140(4), 1073–1137. [DOI: 10.1037/a0035618](https://doi.org/10.1037/a0035618)
+- Hinduja, S., & Patchin, J. W. (2015). *Bullying Beyond the Schoolyard: Preventing and Responding to Cyberbullying* (2nd ed.). Corwin Press.
+- Zych, I., Ortega-Ruiz, R., & Del Rey, R. (2015). Systematic review of theoretical studies on bullying and cyberbullying. *Aggression and Violent Behavior*, 23, 1–21. [DOI: 10.1016/j.avb.2015.03.007](https://doi.org/10.1016/j.avb.2015.03.007)
+
+---
+
+### 3. Nocturnal Abuse — Persistent Late-Night Usage Pattern
+
+#### Why is it a risk?
+
+Research consistently links **excessive nocturnal screen time in children and adolescents** with multiple harms:
+
+- **Sleep disruption**: Hale & Guan (2015) found that screen-based media use was significantly associated with delayed sleep onset, reduced sleep duration, and increased sleep deficiency in children aged 5-17.
+- **Exploitation vulnerability**: Children using devices late at night (11 PM – 4 AM) are typically unsupervised, making them more vulnerable to predatory contact (Livingstone et al., 2017, EU Kids Online).
+- **Mental health**: Twenge & Campbell (2018) demonstrated that adolescents with more than 5 hours of daily screen time were significantly more likely to have risk factors for suicide.
+
+The key distinction between **normal** brief nighttime use (checking a notification) and **abusive** nocturnal patterns is **persistence with human-like Inter-Arrival Times (IAT)**. Automated updates produce fast, regular traffic. A child actively browsing or chatting at 2 AM produces long sessions with irregular, human-paced intervals (1-30 seconds between actions).
+
+#### How we detect it through metadata
+
+| Feature | Automated (benign) | Human (risk) |
+|---|---|---|
+| Hour encoding | 23:00-04:00 | 23:00-04:00 |
+| Session duration | < 30 seconds | **> 60 seconds** |
+| IAT pattern | Regular (0.1-0.5s) | **Irregular (1-30s)** |
+| Total active events | 1-5 | **> 15** |
+
+The cyclic hour encoding (sin/cos) combined with human-like IAT and sustained session duration distinguishes genuine nocturnal browsing from OS updates.
+
+#### References
+
+- Hale, L., & Guan, S. (2015). Screen time and sleep among school-aged children and adolescents: A systematic literature review. *Sleep Medicine Reviews*, 21, 50–58. [DOI: 10.1016/j.smrv.2014.07.007](https://doi.org/10.1016/j.smrv.2014.07.007)
+- Livingstone, S., Mascheroni, G., & Staksrud, E. (2017). European research on children's internet use: Assessing the past and anticipating the future. *New Media & Society*, 20(3), 1103–1122. [DOI: 10.1177/1461444816685930](https://doi.org/10.1177/1461444816685930)
+- Twenge, J. M., & Campbell, W. K. (2018). Associations between screen time and lower psychological well-being among children and adolescents. *Preventive Medicine Reports*, 12, 271–283. [DOI: 10.1016/j.pmedr.2018.10.003](https://doi.org/10.1016/j.pmedr.2018.10.003)
+- Carter, B., Rees, P., Hale, L., Bhattacharjee, D., & Paradkar, M. S. (2016). Association between portable screen-based media device access and sleep outcomes. *JAMA Pediatrics*, 170(12), 1202–1208. [DOI: 10.1001/jamapediatrics.2016.2341](https://doi.org/10.1001/jamapediatrics.2016.2341)
+
+---
+
+### 4. Data Exfiltration — Anomalous Upload Pattern
+
+#### Why is it a risk?
+
+Data exfiltration in the context of child protection covers two scenarios:
+
+1. **Coerced sharing** — A predator pressures a child into uploading intimate photos/videos to cloud storage (Google Drive, MEGA, Dropbox), often as part of sextortion (Wolak et al., 2018).
+2. **Self-generated CSAM** — The child uploads content that, once shared, cannot be retrieved (Internet Watch Foundation, 2023 Annual Report).
+
+Both scenarios produce the same network signature: **large outbound data transfers to cloud storage endpoints**, often at unusual hours.
+
+#### How we detect it through metadata
+
+| Metric | Normal upload | Exfiltration |
+|---|---|---|
+| Bytes per flow | < 1 MB | **> 50 MB** |
+| Bytes ratio (up/down) | 0.3-0.6 | **> 0.7** (upload-heavy) |
+| Destination category | Various | **Cloud storage (port 443)** |
+| Packet count | 10-500 | **> 5,000** |
+
+The model identifies sustained, upload-heavy flows to known cloud storage IP ranges as potential exfiltration — especially when combined with nocturnal timing.
+
+#### References
+
+- Wolak, J., Finkelhor, D., Walsh, W., & Treitman, L. (2018). Sextortion of minors: Characteristics and dynamics. *Journal of Adolescent Health*, 62(1), 72–79. [DOI: 10.1016/j.jadohealth.2017.08.014](https://doi.org/10.1016/j.jadohealth.2017.08.014)
+- Internet Watch Foundation. (2023). *Annual Report 2023: Self-Generated Child Sexual Abuse Content*. [iwf.org.uk](https://www.iwf.org.uk/annual-report-2023/)
+- Liu, F., Wen, Z., & Tong, H. (2018). Detecting data exfiltration using network traffic analysis. *IEEE Transactions on Network and Service Management*, 15(3), 1025–1038.
+- Shu, X., Tian, K., Ciambrone, A., & Yao, D. (2018). Breaking the target: An analysis of target data breach and lessons learned. *arXiv preprint arXiv:1701.04940*.
+
+---
+
+### 5. Encrypted Traffic Classification (ZKTCA Paradigm)
+
+All detection happens without decrypting traffic. This is possible because of advances in **encrypted traffic classification** using only flow-level metadata:
+
+- **Aceto, G., Ciuonzo, D., Montieri, A., & Pescapé, A. (2019)**. Mobile encrypted traffic classification using deep learning: Experimental evaluation, lessons learned, and challenges. *IEEE Transactions on Network and Service Management*, 16(2), 445–458. [DOI: 10.1109/TNSM.2019.2899085](https://doi.org/10.1109/TNSM.2019.2899085)
+- **Rezaei, S., & Liu, X. (2019)**. Deep learning for encrypted traffic classification: An overview. *IEEE Communications Magazine*, 57(5), 76–81. [DOI: 10.1109/MCOM.2019.1800819](https://doi.org/10.1109/MCOM.2019.1800819)
+- **Wang, W., Zhu, M., Zeng, X., Ye, X., & Sheng, Y. (2017)**. Malware traffic classification using convolutional neural networks. *ISCID 2017*. [DOI: 10.1109/ISCID.2017.202](https://doi.org/10.1109/ISCID.2017.202)
+
+These studies demonstrate that flow-level features (packet sizes, inter-arrival times, byte distributions, and port patterns) contain sufficient information to classify application types and detect anomalies — even when the payload is fully encrypted with TLS 1.3.
+
+---
 
 ### The Core Idea
 
