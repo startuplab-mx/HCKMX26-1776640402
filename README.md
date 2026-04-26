@@ -219,6 +219,22 @@ Simulates 4 children's devices over a full day:
 
 ---
 
+## 🤖 AI Disclaimer
+
+This project was developed with the assistance of AI-powered coding tools:
+
+| Tool | Provider | Role |
+|---|---|---|
+| **Antigravity** | Google DeepMind | Agentic coding assistant — architecture design, code generation, testing, and documentation |
+| **Gemini 3.1 Pro** | Google | Large language model powering Antigravity's reasoning and code synthesis |
+| **Claude Opus 4.6** | Anthropic | Supplementary AI assistance for research, analysis, and code review |
+
+All AI-generated code was reviewed, tested, and validated by the development team. The architectural decisions, security design (ZKTCA paradigm), and legal compliance framework (SFP 2026) were directed by the human team with AI serving as an accelerator.
+
+> **Note:** The use of AI tools does not diminish the intellectual contribution of the team. AI was used as a pair-programming partner, not as a replacement for human judgment on privacy, ethics, and child safety design decisions.
+
+---
+
 ## 📄 License
 
 See [LICENSE](LICENSE) file.
