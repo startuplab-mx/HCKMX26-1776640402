@@ -6,6 +6,12 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Model artifacts (large binary files)
+model/data/*.npy
+model/models/*.pt
+model/models/*.onnx
+model/models/*.json
+
 
 
 # OS

@@ -147,7 +147,7 @@ def verify_inference():
         "onnx_q8_size_mb": ONNX_Q8_PATH.stat().st_size / 1024 / 1024 if ONNX_Q8_PATH.exists() else None,
         "inference_avg_ms": avg_ms,
         "inference_p95_ms": p95_ms,
-        "class_names": ["benign", "grooming", "bullying", "night_abuse", "exfiltration"],
+        "class_names": ["benign", "grooming", "bullying", "night_abuse", "exfiltration", "recruitment"],
     }
     with open(MODELS_DIR / "export_report.json", "w") as f:
         json.dump(export_meta, f, indent=2)

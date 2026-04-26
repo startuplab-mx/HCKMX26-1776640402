@@ -37,7 +37,7 @@ WEIGHT_DECAY = 1e-4
 PATIENCE = 8  # early stopping patience
 THRESHOLD = 0.5
 
-CLASS_NAMES = ["benign", "grooming", "bullying", "night_abuse", "exfiltration"]
+CLASS_NAMES = ["benign", "grooming", "bullying", "night_abuse", "exfiltration", "recruitment"]
 
 
 def compute_metrics(preds, targets, threshold=THRESHOLD):

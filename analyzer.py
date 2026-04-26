@@ -41,7 +41,7 @@ PORT_CAT_NUMERIC = {
     8080: 3.0, 9000: 3.0,  # cloud
 }
 
-CLASS_NAMES = ["benign", "grooming", "bullying", "night_abuse", "exfiltration"]
+CLASS_NAMES = ["benign", "grooming", "bullying", "night_abuse", "exfiltration", "recruitment"]
 
 # ==========================================
 # Motor de Cumplimiento Legal (SFP 2026)
@@ -292,7 +292,7 @@ class TransformerTagger:
 
         if alerts:
             for alert_name, alert_prob in alerts:
-                emoji = {"grooming": "🎯", "bullying": "👊", "night_abuse": "🌙", "exfiltration": "📤"}.get(alert_name, "⚠️")
+                emoji = {"grooming": "🎯", "bullying": "👊", "night_abuse": "🌙", "exfiltration": "📤", "recruitment": "🔫"}.get(alert_name, "⚠️")
                 logging.warning(
                     f"{emoji} TRANSFORMER [{alert_name.upper()}]: Confianza {alert_prob:.1%} "
                     f"para IP {src_ip} | Scores: {', '.join(f'{n}={p:.2f}' for n, p in zip(CLASS_NAMES, probs))}"

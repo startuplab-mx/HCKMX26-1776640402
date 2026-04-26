@@ -9,7 +9,7 @@ Architecture:
   - Learned positional encoding (32 positions)
   - 2x TransformerEncoderLayer (d_model=64, nhead=4, dim_ff=128)
   - Mean pooling over sequence
-  - Classification head: Linear(64, 5) with sigmoid
+  - Classification head: Linear(64, 6) with sigmoid
 
 Total params: ~530K (~2MB fp32, <1MB int8 quantized)
 """
@@ -39,7 +39,7 @@ class ZKTCATransformer(nn.Module):
     Lightweight Transformer encoder for ZKTCA flow classification.
 
     Input:  (batch, 32, 12) — 32 flow events, 12 features each
-    Output: (batch, 5)      — sigmoid scores for [benign, grooming, bullying, night_abuse, exfiltration]
+    Output: (batch, 6)      — sigmoid scores for [benign, grooming, bullying, night_abuse, exfiltration, recruitment]
     """
 
     def __init__(
@@ -49,7 +49,7 @@ class ZKTCATransformer(nn.Module):
         nhead=4,
         num_layers=2,
         dim_feedforward=128,
-        num_classes=5,
+        num_classes=6,
         max_seq_len=32,
         dropout=0.1,
     ):

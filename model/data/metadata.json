@@ -6,9 +6,10 @@
     "grooming",
     "bullying",
     "night_abuse",
-    "exfiltration"
+    "exfiltration",
+    "recruitment"
   ],
-  "total_samples": 62400,
+  "total_samples": 79200,
   "has_augmentation": true,
   "has_multi_label": true,
   "has_hard_negatives": true

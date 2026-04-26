@@ -1,12 +1,12 @@
 """
-ZKTCA Enhanced Training Data Generator (v2)
+ZKTCA Enhanced Training Data Generator (v3)
 ============================================
-Generates 50K+ labeled sequences with:
+Generates 70K+ labeled sequences with 6 risk categories:
 - More samples per class (8K base + 2K variants)
-- Multi-label combinations (grooming+night, bullying+exfiltration)
-- Hard negatives (benign gaming, benign nocturnal)
+- Multi-label combinations (grooming+night, recruitment+night)
+- Hard negatives (benign gaming, benign nocturnal, benign group chat)
 - Gaussian noise augmentation
-- Variable sequence lengths (padded to 32)
+- Criminal recruitment detection (new in v3)
 """
 
 import numpy as np
@@ -52,7 +52,7 @@ def gen_benign(n):
         hs, hc = cyclic_hour(h)
         for i in range(SEQ_LEN):
             fill_baseline(seq, i, hs, hc)
-        seqs.append(seq); labs.append([1,0,0,0,0])
+        seqs.append(seq); labs.append([1,0,0,0,0,0])
     return seqs, labs
 
 def gen_benign_gaming(n):
@@ -75,7 +75,7 @@ def gen_benign_gaming(n):
             seq[i, F_UDST] = np.random.randint(1, 4) / 20.0
             seq[i, F_ENTR] = np.random.uniform(0.2, 0.5)
             seq[i, F_NEWDST] = float(np.random.rand() < 0.05)
-        seqs.append(seq); labs.append([1,0,0,0,0])
+        seqs.append(seq); labs.append([1,0,0,0,0,0])
     return seqs, labs
 
 def gen_benign_night(n):
@@ -96,7 +96,7 @@ def gen_benign_night(n):
                 seq[i, F_PKT] = np.log1p(np.random.randint(1, 10))
                 seq[i, F_BYTES] = np.log1p(np.random.randint(100, 1000))
                 seq[i, F_DUR] = 0.0
-        seqs.append(seq); labs.append([1,0,0,0,0])
+        seqs.append(seq); labs.append([1,0,0,0,0,0])
     return seqs, labs
 
 def gen_grooming(n):
@@ -126,7 +126,7 @@ def gen_grooming(n):
             seq[i, F_UDST] = np.random.randint(2, 8) / 20.0
             seq[i, F_ENTR] = np.random.uniform(0.4, 0.8)
             seq[i, F_NEWDST] = 1.0 if i == sw else float(np.random.rand() < 0.15)
-        seqs.append(seq); labs.append([0,1,0,0,0])
+        seqs.append(seq); labs.append([0,1,0,0,0,0])
     return seqs, labs
 
 def gen_grooming_gradual(n):
@@ -155,7 +155,7 @@ def gen_grooming_gradual(n):
             seq[i, F_UDST] = np.random.randint(2, 8) / 20.0
             seq[i, F_ENTR] = np.random.uniform(0.4, 0.8)
             seq[i, F_NEWDST] = float(np.random.rand() < 0.2)
-        seqs.append(seq); labs.append([0,1,0,0,0])
+        seqs.append(seq); labs.append([0,1,0,0,0,0])
     return seqs, labs
 
 def gen_bullying(n):
@@ -181,7 +181,7 @@ def gen_bullying(n):
                 fill_baseline(seq, i, hs, hc)
             seq[i, F_HSIN] = hs + np.random.normal(0, 0.05)
             seq[i, F_HCOS] = hc + np.random.normal(0, 0.05)
-        seqs.append(seq); labs.append([0,0,1,0,0])
+        seqs.append(seq); labs.append([0,0,1,0,0,0])
     return seqs, labs
 
 def gen_bullying_mild(n):
@@ -208,7 +208,7 @@ def gen_bullying_mild(n):
                 fill_baseline(seq, i, hs, hc)
             seq[i, F_HSIN] = hs + np.random.normal(0, 0.05)
             seq[i, F_HCOS] = hc + np.random.normal(0, 0.05)
-        seqs.append(seq); labs.append([0,0,1,0,0])
+        seqs.append(seq); labs.append([0,0,1,0,0,0])
     return seqs, labs
 
 def gen_night(n):
@@ -230,7 +230,7 @@ def gen_night(n):
             seq[i, F_UDST] = np.random.randint(1, 4) / 20.0
             seq[i, F_ENTR] = np.random.uniform(0.2, 0.5)
             seq[i, F_NEWDST] = float(np.random.rand() < 0.05)
-        seqs.append(seq); labs.append([0,0,0,1,0])
+        seqs.append(seq); labs.append([0,0,0,1,0,0])
     return seqs, labs
 
 def gen_exfil(n):
@@ -256,7 +256,7 @@ def gen_exfil(n):
                 fill_baseline(seq, i, hs, hc)
             seq[i, F_HSIN] = hs + np.random.normal(0, 0.05)
             seq[i, F_HCOS] = hc + np.random.normal(0, 0.05)
-        seqs.append(seq); labs.append([0,0,0,0,1])
+        seqs.append(seq); labs.append([0,0,0,0,1,0])
     return seqs, labs
 
 # ── Multi-label combinations ───────────────────────────
@@ -289,7 +289,7 @@ def gen_grooming_night(n):
             seq[i, F_UDST] = np.random.randint(2, 6) / 20.0
             seq[i, F_ENTR] = np.random.uniform(0.3, 0.7)
             seq[i, F_NEWDST] = float(np.random.rand() < 0.15)
-        seqs.append(seq); labs.append([0,1,0,1,0])  # grooming + night
+        seqs.append(seq); labs.append([0,1,0,1,0,0])  # grooming + night
     return seqs, labs
 
 def gen_night_exfil(n):
@@ -322,7 +322,133 @@ def gen_night_exfil(n):
             seq[i, F_UDST] = np.random.randint(1, 4) / 20.0
             seq[i, F_ENTR] = np.random.uniform(0.2, 0.5)
             seq[i, F_NEWDST] = float(np.random.rand() < 0.1)
-        seqs.append(seq); labs.append([0,0,0,1,1])  # night + exfil
+        seqs.append(seq); labs.append([0,0,0,1,1,0])  # night + exfil
+    return seqs, labs
+
+def gen_recruitment(n):
+    """Criminal recruitment: social media → encrypted group chat + large inbound media."""
+    seqs, labs = [], []
+    for _ in range(n):
+        seq = np.zeros((SEQ_LEN, FEAT_DIM))
+        h = np.random.choice([15,16,17,18,19,20,21,22])
+        hs, hc = cyclic_hour(h)
+        # Phase 1: social media browsing (first ~10 events)
+        phase1_end = np.random.randint(6, 14)
+        # Phase 2: encrypted group activity + large downloads
+        for i in range(SEQ_LEN):
+            seq[i, F_HSIN] = hs + np.random.normal(0, 0.05)
+            seq[i, F_HCOS] = hc + np.random.normal(0, 0.05)
+            if i < phase1_end:
+                # Social media phase (TikTok, Instagram)
+                seq[i, F_PORT_CAT] = 0.0  # general web
+                seq[i, F_PROTO] = 0.0
+                seq[i, F_PKT] = np.log1p(np.random.randint(10, 200))
+                seq[i, F_BYTES] = np.log1p(np.random.randint(1000, 50000))
+                seq[i, F_DUR] = np.random.uniform(5, 120)
+                seq[i, F_RATIO] = np.random.uniform(0.2, 0.5)  # download-heavy (watching)
+                seq[i, F_IAT] = np.random.uniform(0.5, 10.0)
+                seq[i, F_UDST] = np.random.randint(2, 5) / 20.0
+                seq[i, F_ENTR] = np.random.uniform(0.3, 0.6)
+                seq[i, F_NEWDST] = float(np.random.rand() < 0.1)
+            else:
+                # Encrypted group + large media downloads
+                seq[i, F_PORT_CAT] = 2.0  # chat/encrypted
+                seq[i, F_PROTO] = 0.0  # TCP
+                seq[i, F_PKT] = np.log1p(np.random.randint(100, 2000))
+                # Large inbound media (recruitment videos/propaganda): 5-50MB
+                seq[i, F_BYTES] = np.log1p(np.random.randint(500000, 50000000))
+                seq[i, F_DUR] = np.random.uniform(30, 600)
+                seq[i, F_RATIO] = np.random.uniform(0.05, 0.25)  # very download-heavy
+                seq[i, F_IAT] = np.random.uniform(1.0, 20.0)
+                # Many unique IPs in group (cooperative, not hostile)
+                seq[i, F_UDST] = np.random.randint(8, 20) / 20.0
+                seq[i, F_ENTR] = np.random.uniform(0.6, 0.9)
+                seq[i, F_NEWDST] = float(np.random.rand() < 0.4)
+        seqs.append(seq); labs.append([0,0,0,0,0,1])
+    return seqs, labs
+
+def gen_recruitment_gradual(n):
+    """Variant: gradual engagement over time, interleaved social + group."""
+    seqs, labs = [], []
+    for _ in range(n):
+        seq = np.zeros((SEQ_LEN, FEAT_DIM))
+        h = np.random.choice([16,17,18,19,20,21])
+        hs, hc = cyclic_hour(h)
+        transition = np.random.randint(8, 16)
+        for i in range(SEQ_LEN):
+            seq[i, F_HSIN] = hs + np.random.normal(0, 0.05)
+            seq[i, F_HCOS] = hc + np.random.normal(0, 0.05)
+            if i < transition:
+                seq[i, F_PORT_CAT] = 0.0
+            elif i < transition + 6:
+                seq[i, F_PORT_CAT] = np.random.choice([0.0, 2.0])  # mixed
+            else:
+                seq[i, F_PORT_CAT] = 2.0
+            seq[i, F_PROTO] = 0.0
+            seq[i, F_PKT] = np.log1p(np.random.randint(50, 1500))
+            # Gradually increasing download sizes
+            base_bytes = 50000 if i < transition else np.random.randint(500000, 30000000)
+            seq[i, F_BYTES] = np.log1p(base_bytes)
+            seq[i, F_DUR] = np.random.uniform(10, 400)
+            seq[i, F_RATIO] = np.random.uniform(0.1, 0.35)  # download-heavy
+            seq[i, F_IAT] = np.random.uniform(0.5, 15.0)
+            seq[i, F_UDST] = np.random.randint(5, 15) / 20.0
+            seq[i, F_ENTR] = np.random.uniform(0.5, 0.85)
+            seq[i, F_NEWDST] = float(np.random.rand() < 0.3)
+        seqs.append(seq); labs.append([0,0,0,0,0,1])
+    return seqs, labs
+
+def gen_recruitment_night(n):
+    """Multi-label: recruitment activity happening at night."""
+    seqs, labs = [], []
+    for _ in range(n):
+        seq = np.zeros((SEQ_LEN, FEAT_DIM))
+        h = np.random.choice([23, 0, 1, 2])
+        hs, hc = cyclic_hour(h)
+        phase1_end = np.random.randint(6, 12)
+        for i in range(SEQ_LEN):
+            seq[i, F_HSIN] = hs + np.random.normal(0, 0.1)
+            seq[i, F_HCOS] = hc + np.random.normal(0, 0.1)
+            if i < phase1_end:
+                seq[i, F_PORT_CAT] = 0.0
+                seq[i, F_PKT] = np.log1p(np.random.randint(10, 200))
+                seq[i, F_BYTES] = np.log1p(np.random.randint(2000, 80000))
+                seq[i, F_RATIO] = np.random.uniform(0.2, 0.5)
+            else:
+                seq[i, F_PORT_CAT] = 2.0
+                seq[i, F_PKT] = np.log1p(np.random.randint(100, 2000))
+                seq[i, F_BYTES] = np.log1p(np.random.randint(500000, 40000000))
+                seq[i, F_RATIO] = np.random.uniform(0.05, 0.25)
+            seq[i, F_PROTO] = 0.0
+            seq[i, F_DUR] = np.random.uniform(30, 900)
+            seq[i, F_IAT] = np.random.uniform(1.0, 30.0)
+            seq[i, F_UDST] = np.random.randint(5, 18) / 20.0
+            seq[i, F_ENTR] = np.random.uniform(0.5, 0.9)
+            seq[i, F_NEWDST] = float(np.random.rand() < 0.3)
+        seqs.append(seq); labs.append([0,0,0,1,0,1])  # night + recruitment
+    return seqs, labs
+
+def gen_benign_group_chat(n):
+    """Hard negative: group chat (e.g., school project) — should NOT trigger recruitment."""
+    seqs, labs = [], []
+    for _ in range(n):
+        seq = np.zeros((SEQ_LEN, FEAT_DIM))
+        h = np.random.choice([10,11,14,15,16,17,18])
+        hs, hc = cyclic_hour(h)
+        for i in range(SEQ_LEN):
+            seq[i, F_PORT_CAT] = 2.0  # encrypted chat
+            seq[i, F_PROTO] = 0.0
+            seq[i, F_PKT] = np.log1p(np.random.randint(10, 200))
+            seq[i, F_BYTES] = np.log1p(np.random.randint(1000, 30000))  # small msgs
+            seq[i, F_DUR] = np.random.uniform(5, 120)
+            seq[i, F_RATIO] = np.random.uniform(0.35, 0.65)  # balanced (not download-heavy)
+            seq[i, F_IAT] = np.random.uniform(1.0, 20.0)
+            seq[i, F_HSIN] = hs + np.random.normal(0, 0.05)
+            seq[i, F_HCOS] = hc + np.random.normal(0, 0.05)
+            seq[i, F_UDST] = np.random.randint(3, 8) / 20.0
+            seq[i, F_ENTR] = np.random.uniform(0.4, 0.7)
+            seq[i, F_NEWDST] = float(np.random.rand() < 0.05)
+        seqs.append(seq); labs.append([1,0,0,0,0,0])
     return seqs, labs
 
 # ── Main ────────────────────────────────────────────────
@@ -348,8 +474,12 @@ def main():
         ("bullying (mild)",       gen_bullying_mild,   n_var),
         ("night abuse",           gen_night,           n),
         ("exfiltration",          gen_exfil,           n),
+        ("recruitment (rapid)",   gen_recruitment,     n),
+        ("recruitment (gradual)", gen_recruitment_gradual, n_var),
+        ("benign (group chat)",   gen_benign_group_chat, n_var),
         ("grooming + night",      gen_grooming_night,  n_var),
         ("night + exfiltration",  gen_night_exfil,     n_var),
+        ("recruitment + night",   gen_recruitment_night, n_var),
     ]
 
     for name, fn, count in generators:
@@ -380,7 +510,7 @@ def main():
 
     # Class distribution
     print(f"\n   Label distribution:")
-    names = ["benign", "grooming", "bullying", "night_abuse", "exfiltration"]
+    names = ["benign", "grooming", "bullying", "night_abuse", "exfiltration", "recruitment"]
     for i, nm in enumerate(names):
         cnt = int(y[:, i].sum())
         print(f"     {nm:15s}: {cnt:6d} ({cnt/len(y)*100:.1f}%)")
